@@ -1,5 +1,6 @@
 FakeMan - 基于欲望的自主智能体 / Desire-Based Autonomous Agent
-English version is below,pls scroll down | 中文
+
+### English version is below,pls scroll down
 
 中文版本
 概述
