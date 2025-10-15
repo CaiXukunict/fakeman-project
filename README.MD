@@ -7,6 +7,9 @@ it will work as:
 	4.try to act(common language model)
 The 2.evaluate desire(Purpose Genarator) and 3.thinking purpose(Purpose Genarator) always active and sending prompts to the common bot as the desire of the bot. it is the main loop(prompt loop)
 The act bot is always act base on complet the purpose which sent by Purpose Genarator. 
+Acting bot will act as:
+	1. resieve purpose and think about how to conplet 
+	2. output(can choose not to base on the thinking result) 
 desire:
   1.desire of power:desire to control more stuffs
   2.desire of understanding:desire the other's understanding
@@ -21,4 +24,4 @@ Bias:
 The Purpose Genarator will Work as: 
   1.list the desire and fear and give value for each one(fear has a nagative value).
   2.value be ajusted by bias
-  3.genarate purposes base on make the value biggest
+  3.genarate purposes base on make the happness value biggest
