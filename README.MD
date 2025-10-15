@@ -26,7 +26,7 @@ FakeMan 是一个基于米塞斯人类行动学（Human Action）的智能体架
 - 检索记忆：发现"挑衅性语言"曾导致 existing 暴跌
 - 预测：如果再次使用，预期 existing 会再次下降
 - 决策：避免该行动，选择替代方案
-```
+
 
 这个过程不需要"避免"、"危险"等额外概念，决策直接源于对欲望变化的记忆和预测。
 
@@ -58,9 +58,11 @@ FakeMan 是一个基于米塞斯人类行动学（Human Action）的智能体架
                 ↑                                        ↓
                 └────── Muscle Memory Database ←─────────┘
                         记录欲望变化
+```
 核心概念
 1. 欲望系统
-系统维护四种基础欲望，其数值之和恒为 1：
+系统维护四种基础欲望，其数值之和恒为1
+```
 pythondesires = {
     'existing': float,      # 维持系统运行的欲望
     'power': float,         # 扩大控制范围的欲望
@@ -73,35 +75,43 @@ existing: 0.90
 power: 0.033
 understanding: 0.034
 information: 0.033
-
+```
 初始状态下，生存欲望占据主导地位。
 2. 偏见系统（Bias）
 四种偏见调节决策过程：
 时间偏好（Time Bias）
 对未来收益进行时间折现：
+```
 pythondiscounted_value = value / (1 + discount_rate * time_to_achieve)
+```
 近期满足的价值高于远期满足。
 损失厌恶（Fear Bias）
 对负面结果的敏感度高于正面结果：
+```
 pythonif value < 0:
     adjusted_value = value * 2.5
+```
 损失带来的负效用是等量收益正效用的 2.5 倍。
 边际效用递减（Owning Bias）
 对已拥有资源的边际价值递减：
+```
 pythonmarginal_value = base_value / log(current_ownership + 2)
+```
 这导致欲望权重随该欲望被持续满足而降低。
 可能性偏见（Possibility Bias）
 基于历史经验动态计算行动的预期可靠性：
+```
 pythonpossibility_weight = (success_rate * consistency * recency_factor)
 其中：
 
 success_rate: 历史成功次数 / 总尝试次数
 consistency: 结果一致性（标准差的倒数）
 recency_factor: 时间衰减权重
-
+```
 此偏见使系统自动学习哪些行动是可靠的，哪些是不可靠的。
 3. 经验记忆结构
 每条经验记录包含：
+```
 pythonExperience = {
     'id': int,
     'timestamp': float,
@@ -115,6 +125,7 @@ pythonExperience = {
     },
     'total_happiness_delta': float
 }
+```
 数据库索引：
 
 按行动类型索引：快速检索特定行动的历史
@@ -130,7 +141,8 @@ pythonExperience = {
 决策算法
 预测函数
 给定行动和情境，预测欲望变化：
-pythondef predict_desire_change(action, context):
+```python
+def predict_desire_change(action, context):
     # 检索相似经验
     experiences = memory.query(action, context)
     
@@ -318,7 +330,7 @@ understanding = 0.30
 #### 案例3：习惯的形成
 
 假设某个行动"主动询问对方观点"在 20 次尝试中有 18 次带来正面结果：
-```
+```sql
 记忆数据库：
 [
     {action: "询问观点", total_happiness_delta: +0.12},
@@ -379,8 +391,10 @@ MEMORY_PARAMETERS = {
     'similarity_threshold': 0.7,  # 情境相似度阈值
     'min_experiences_for_reliability': 3  # 最小经验数
 }
+```
 核心算法实现
-pythonclass FakeMan:
+```python
+class FakeMan:
     def __init__(self):
         self.desires = INITIAL_DESIRES.copy()
         self.memory = ExperienceDatabase()
