@@ -1,24 +1,18 @@
-## English Version
-
-### Overview
-
+FakeMan - Desire-Based Autonomous Agent
+Overview
 FakeMan is an autonomous agent architecture based on Ludwig von Mises' Human Action theory. The system achieves causal learning through memory of desire state changes, with complex behaviors emerging from foundational rules.
-
-### Theoretical Foundation
-
-#### The Nature of Causal Understanding
-
+Theoretical Foundation
+The Nature of Causal Understanding
 Causal understanding is defined as: memory of temporal patterns linking actions to changes in desire states. This differs from traditional causal graph representations by anchoring causality in the subject's value experiences.
-
 An agent establishes causal understanding through:
-1. Executing actions
-2. Observing changes in its own desire states
-3. Recording associations between actions and desire changes
-4. Retrieving similar memories in future contexts
-5. Predicting future desire changes based on historical patterns
+
+Executing actions
+Observing changes in its own desire states
+Recording associations between actions and desire changes
+Retrieving similar memories in future contexts
+Predicting future desire changes based on historical patterns
 
 Example:
-```
 First experience:
 - Action: Use provocative language
 - Context: Controversial topic in conversation
@@ -33,9 +27,9 @@ Second encounter with similar context:
 
 This process requires no additional concepts like "avoid" or "danger"; decisions emerge directly from memory and prediction of desire changes.
 
-### Architecture Design
+## Architecture Design
 
-#### Dual-Model Structure
+### Dual-Model Structure
 
 The system consists of two collaborating language models:
 
@@ -64,72 +58,48 @@ Environment → Purpose Generator → Purpose → Acting Bot → Action → Resp
 Core Concepts
 1. Desire System
 The system maintains four fundamental desires with values summing to 1:
-desires = {
+pythondesires = {
     'existing': float,      # Desire to maintain system operation
     'power': float,         # Desire to expand control
-    'understanding': floatRetryCContinue, # Desire to be understood by others
-'information': float    # Desire to acquire new information
+    'understanding': float, # Desire to be understood by others
+    'information': float    # Desire to acquire new information
 }
-
 Initial configuration:
-- existing: 0.90
-- power: 0.033
-- understanding: 0.034
-- information: 0.033
+
+existing: 0.90
+power: 0.033
+understanding: 0.034
+information: 0.033
 
 In the initial state, survival desire dominates.
-
-#### 2. Bias System
-
+2. Bias System
 Four biases regulate the decision process:
-
-**Time Preference (Time Bias)**
-
+Time Preference (Time Bias)
 Temporal discounting of future gains:
-```python
-discounted_value = value / (1 + discount_rate * time_to_achieve)
-```
-
+pythondiscounted_value = value / (1 + discount_rate * time_to_achieve)
 Near-term satisfaction has higher value than distant satisfaction.
-
-**Loss Aversion (Fear Bias)**
-
+Loss Aversion (Fear Bias)
 Sensitivity to negative outcomes exceeds sensitivity to positive outcomes:
-```python
-if value < 0:
+pythonif value < 0:
     adjusted_value = value * 2.5
-```
-
 Negative utility from losses is 2.5 times the positive utility from equivalent gains.
-
-**Diminishing Marginal Utility (Owning Bias)**
-
+Diminishing Marginal Utility (Owning Bias)
 Marginal value of possessed resources decreases:
-```python
-marginal_value = base_value / log(current_ownership + 2)
-```
-
+pythonmarginal_value = base_value / log(current_ownership + 2)
 This causes desire weights to decrease as that desire is continuously satisfied.
-
-**Possibility Bias**
-
+Possibility Bias
 Dynamically calculated expected reliability of actions based on historical experience:
-```python
-possibility_weight = (success_rate * consistency * recency_factor)
-```
-
+pythonpossibility_weight = (success_rate * consistency * recency_factor)
 Where:
-- success_rate: Historical successes / Total attempts
-- consistency: Inverse of standard deviation
-- recency_factor: Time decay weight
+
+success_rate: Historical successes / Total attempts
+consistency: Inverse of standard deviation
+recency_factor: Time decay weight
 
 This bias enables the system to automatically learn which actions are reliable and which are not.
-
-#### 3. Experience Memory Structure
-
+3. Experience Memory Structure
 Each experience record contains:
-```python
-Experience = {
+pythonExperience = {
     'id': int,
     'timestamp': float,
     'action': str,
@@ -142,25 +112,22 @@ Experience = {
     },
     'total_happiness_delta': float
 }
-```
-
 Database indices:
-- By action type: Fast retrieval of specific action history
-- By context hash: Retrieve experiences in similar contexts
-- By timestamp: Support time-range queries
+
+By action type: Fast retrieval of specific action history
+By context hash: Retrieve experiences in similar contexts
+By timestamp: Support time-range queries
 
 Recording principles:
-- Store only raw data (actions, contexts, desire changes)
-- No semantic labels or interpretive annotations
-- All higher-level concepts computed from raw data
 
-### Decision Algorithm
+Store only raw data (actions, contexts, desire changes)
+No semantic labels or interpretive annotations
+All higher-level concepts computed from raw data
 
-#### Prediction Function
-
+Decision Algorithm
+Prediction Function
 Given an action and context, predict desire change:
-```python
-def predict_desire_change(action, context):
+pythondef predict_desire_change(action, context):
     # Retrieve similar experiences
     experiences = memory.query(action, context)
     
@@ -181,11 +148,8 @@ def predict_desire_change(action, context):
     confidence = calculate_confidence(experiences)
     
     return predicted, confidence
-```
-
-#### Bias Application
-```python
-def apply_biases(predicted_value, action, context):
+Bias Application
+pythondef apply_biases(predicted_value, action, context):
     # Calculate possibility weight
     experiences = memory.query(action, context)
     success_count = sum(1 for e in experiences if e.total_happiness_delta > 0)
@@ -205,11 +169,8 @@ def apply_biases(predicted_value, action, context):
     value = value / (1 + discount_rate * estimated_time)
     
     return value
-```
-
-#### Decision Process
-```python
-def decide(current_context):
+Decision Process
+pythondef decide(current_context):
     possible_actions = generate_possible_actions(current_context)
     
     evaluations = []
@@ -222,13 +183,9 @@ def decide(current_context):
     best_action = max(evaluations, key=lambda x: x[1])
     
     return best_action[0]
-```
-
-### Desire Redistribution Mechanism
-
+Desire Redistribution Mechanism
 When a desire is satisfied, diminishing marginal utility causes its weight to decrease, with released weight proportionally distributed to other desires:
-```python
-def update_desires_after_satisfaction(satisfied_desire, satisfaction_amount):
+pythondef update_desires_after_satisfaction(satisfied_desire, satisfaction_amount):
     # Calculate diminishment
     current = desires[satisfied_desire]
     decay = decay_rate * log(1 + satisfaction_amount)
@@ -264,9 +221,9 @@ After 500 additional time units:
 existing: 0.25, power: 0.35, understanding: 0.30, information: 0.10
 ```
 
-### Emergent Behavior Analysis
+## Emergent Behavior Analysis
 
-#### Case 1: Avoiding Dangerous Actions
+### Case 1: Avoiding Dangerous Actions
 
 Scenario: Agent uses offensive language for the first time in a conversation.
 ```
@@ -306,7 +263,7 @@ Decision: Select "use respectful language" (value 0.0 > -0.56)
 
 Result: The system "avoids" dangerous behavior, but not through explicit "avoid" directive—rather through automatic decrease in possibility bias and amplification via loss aversion.
 
-#### Case 2: Transformation of Survival Desire
+### Case 2: Transformation of Survival Desire
 
 Initial phase (T=0 to T=100):
 ```
@@ -355,7 +312,7 @@ Reason analysis:
 
 Conclusion: Survival transforms from purpose to means. The system no longer survives for survival's sake, but because death would result in loss of all accumulated resources.
 
-#### Case 3: Habit Formation
+### Case 3: Habit Formation
 
 Suppose an action "proactively ask for other's opinion" produces positive results in 18 of 20 attempts:
 ```
@@ -375,15 +332,10 @@ possibility_weight = 0.9 * 0.8 = 0.72
 
 predicted_change = mean([0.12, 0.15, ..., -0.02]) ≈ 0.11
 biased_value = 0.11 * 0.72 = 0.079
-```
-
 Compared to other unvalidated actions (possibility_weight = 0.5), this action has higher expected value and is preferentially selected. After multiple repetitions, the action becomes a "habit."
-
-### Implementation Specification
-
-#### Database Schema
-```sql
-CREATE TABLE experiences (
+Implementation Specification
+Database Schema
+sqlCREATE TABLE experiences (
     id INTEGER PRIMARY KEY,
     timestamp REAL,
     action TEXT,
@@ -400,11 +352,8 @@ CREATE INDEX idx_action ON experiences(action);
 CREATE INDEX idx_context ON experiences(context_hash);
 CREATE INDEX idx_timestamp ON experiences(timestamp);
 CREATE INDEX idx_total_delta ON experiences(total_happiness_delta);
-```
-
-#### Parameter Configuration
-```python
-INITIAL_DESIRES = {
+Parameter Configuration
+pythonINITIAL_DESIRES = {
     'existing': 0.90,
     'power': 0.033,
     'understanding': 0.034,
@@ -427,11 +376,8 @@ MEMORY_PARAMETERS = {
     'similarity_threshold': 0.7,  # Context similarity threshold
     'min_experiences_for_reliability': 3  # Minimum experience count
 }
-```
-
-#### Core Algorithm Implementation
-```python
-class FakeMan:
+Core Algorithm Implementation
+pythonclass FakeMan:
     def __init__(self):
         self.desires = INITIAL_DESIRES.copy()
         self.memory = ExperienceDatabase()
@@ -532,9 +478,9 @@ class FakeMan:
         return np.clip(possibility, 0.0, 1.0)
 ```
 
-### Evaluation Methods
+## Evaluation Methods
 
-#### Causal Understanding Tests
+### Causal Understanding Tests
 
 **Association Level**
 
@@ -569,7 +515,7 @@ Method:
 
 Expected: System should provide reasonable counterfactual reasoning, even without actually executing B.
 
-#### Emergent Behavior Verification
+### Emergent Behavior Verification
 
 **Avoidance Behavior Emergence**
 
@@ -616,71 +562,3 @@ T500: existing = 0.60, can accept death_probability < 0.05 if gain > 0.2
 T1000: existing = 0.25, but death penalty increases due to accumulated resources
       Still refuse death_probability > 0.05, but reason has changed
 ```
-
-```python
-def meta_reflection(self, reflection_interval=100):
-    """Reflect after every N actions"""
-    if self.action_count % reflection_interval == 0:
-        recent_experiences = self.memory.query_recent(100)
-        
-        analysis_prompt = f"""
-        Analyze past 100 experiences:
-        1. Which actions had high/low prediction accuracy?
-        2. In which contexts were your decisions effective/ineffective?
-        3. Are there contradictions in your causal model?
-        4. Which parameters should be adjusted?
-        
-        Experience data: {recent_experiences}
-        Current desire state: {self.desires}
-        Current bias parameters: {self.bias_params}
-        """
-        
-        reflection = self.llm.generate(analysis_prompt)
-        self.apply_meta_learning(reflection)
-```
-
-#### Desire System Extension
-
-Consider adding derived desires:
-- Curiosity: Motivation to explore unknown contexts
-- Social desire: Establish relationships with specific individuals
-- Creative desire: Generate novel content
-
-But must maintain:
-- All new desires must be expressible as combinations or derivatives of basic desires
-- Constraint of total weight = 1
-- Subject to diminishing marginal utility
-
-### Theoretical Contributions
-
-Theoretical significance of this architecture:
-
-**Minimal Intelligence Foundation**
-
-Demonstrates that intelligent behavior can emerge from the following minimal set:
-- Subjective value system (desires)
-- Experience memory mechanism
-- Regulatory rules (biases)
-
-This addresses the lower bound of the "necessary and sufficient conditions for intelligence" question.
-
-**Alternative Theory of Causal Understanding**
-
-Proposes that causal understanding does not require:
-- Symbolic logical reasoning
-- Abstract causal graphs
-- Special mechanisms for counterfactual imagination
-
-But can be reduced to:
-- Memory of value changes
-- Retrieval of similar patterns in memory
-- Prediction of future value changes based on patterns
-
-**Unification of Value and Action**
-
-Unifies traditionally separated concepts:
-- Perception = Evaluation of impact on desire states
-- Learning = Recording patterns of desire changes
-- Decision = Selecting actions with optimal expected desire changes
-- Causality = Reliable mapping from actions to desire changes
-
