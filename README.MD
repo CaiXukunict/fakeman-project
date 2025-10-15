@@ -139,10 +139,9 @@ pythonExperience = {
 不存储语义标签或解释性注释
 所有高层次概念从原始数据中计算得出
 
-决策算法
-预测函数
-给定行动和情境，预测欲望变化：
+
 ```python
+决策算法，预测函数，给定行动和情境，预测欲望变化：
 def predict_desire_change(action, context):
     # 检索相似经验
     experiences = memory.query(action, context)
@@ -165,7 +164,7 @@ def predict_desire_change(action, context):
     
     return predicted, confidence
 偏见应用
-pythondef apply_biases(predicted_value, action, context):
+def apply_biases(predicted_value, action, context):
     # 计算可能性权重
     experiences = memory.query(action, context)
     success_count = sum(1 for e in experiences if e.total_happiness_delta > 0)
@@ -186,7 +185,7 @@ pythondef apply_biases(predicted_value, action, context):
     
     return value
 决策流程
-pythondef decide(current_context):
+def decide(current_context):
     possible_actions = generate_possible_actions(current_context)
     
     evaluations = []
@@ -201,7 +200,7 @@ pythondef decide(current_context):
     return best_action[0]
 欲望再分配机制
 当某个欲望被满足后，边际效用递减导致其权重降低，释放的权重按比例分配给其他欲望：
-pythondef update_desires_after_satisfaction(satisfied_desire, satisfaction_amount):
+def update_desires_after_satisfaction(satisfied_desire, satisfaction_amount):
     # 计算递减
     current = desires[satisfied_desire]
     decay = decay_rate * log(1 + satisfaction_amount)
