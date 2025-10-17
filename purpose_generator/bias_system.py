@@ -62,10 +62,10 @@ class BiasSystem:
         
         # 边际效用递减率（每种欲望不同）
         self.owning_decay_rates = bias_params.get('owning_decay_rates', {
-            'existing': 0.001,      # 生存欲望递减最慢
-            'power': 0.01,          # 权力欲望递减较快
-            'understanding': 0.008,
-            'information': 0.015    # 信息欲望递减最快
+            'existing': 0.001,      # 维持存在欲望递减最慢
+            'power': 0.01,          # 增加手段欲望递减较快
+            'understanding': 0.008, # 获得认可欲望
+            'information': 0.015    # 减少不确定性欲望递减最快
         })
         
         # 可能性偏见的参数
@@ -202,15 +202,101 @@ class BiasSystem:
         return discounted
     
     # ==========================================
-    # 3. 边际效用递减（Owning Bias）
+    # 3. 边际效用递减（Owning Bias）- 基于可达成性的欲望转移
     # ==========================================
+    
+    def apply_owning_bias_with_achievability(self,
+                                             current_desires: Dict[str, float],
+                                             purpose_achievability: Dict[str, float]) -> Dict[str, float]:
+        """
+        基于可达成性应用边际效用递减
+        
+        新逻辑：最可能达成的欲望bias降低，更不可能达成的欲望bias增加
+        这反映了"容易满足的欲望变得不那么重要，难以满足的欲望变得更重要"
+        
+        Args:
+            current_desires: 当前欲望状态
+            purpose_achievability: 各目的（对应欲望）的可达成性
+                                   格式: {'existing': 0.8, 'power': 0.3, ...}
+                                   值越高表示越容易达成
+        
+        Returns:
+            调整后的欲望状态（已归一化）
+            
+        Example:
+            >>> current = {'existing': 0.4, 'power': 0.2, 'understanding': 0.25, 'information': 0.15}
+            >>> achievability = {'existing': 0.8, 'power': 0.2, 'understanding': 0.5, 'information': 0.6}
+            >>> # existing 最容易达成，其bias会降低；power 最难达成，其bias会增加
+            >>> new = bias.apply_owning_bias_with_achievability(current, achievability)
+        """
+        if not purpose_achievability:
+            return current_desires.copy()
+        
+        new_desires = current_desires.copy()
+        
+        # 计算平均可达成性
+        avg_achievability = sum(purpose_achievability.values()) / len(purpose_achievability)
+        
+        # 计算每个欲望应该转移的量
+        transfer_amounts = {}
+        total_to_transfer = 0.0
+        
+        for desire_name, achievability in purpose_achievability.items():
+            if desire_name not in new_desires:
+                continue
+            
+            # 可达成性高于平均 -> 降低bias（转出）
+            # 可达成性低于平均 -> 增加bias（转入）
+            deviation = achievability - avg_achievability
+            
+            # 转移量与可达成性偏差成正比
+            transfer_rate = self.owning_decay_rates.get(desire_name, 0.01)
+            transfer = deviation * transfer_rate * new_desires[desire_name]
+            
+            transfer_amounts[desire_name] = transfer
+            if transfer > 0:  # 需要转出
+                total_to_transfer += transfer
+        
+        # 应用转移
+        for desire_name in new_desires.keys():
+            if desire_name in transfer_amounts:
+                transfer = transfer_amounts[desire_name]
+                
+                if transfer > 0:  # 从这个欲望转出
+                    new_desires[desire_name] -= transfer
+                else:  # 转入这个欲望
+                    # 按比例分配转出的总量
+                    if total_to_transfer > 0:
+                        # 不可达成程度越高，分到的越多
+                        achievability = purpose_achievability.get(desire_name, 0.5)
+                        weight = (1.0 - achievability)
+                        total_weight = sum(
+                            (1.0 - purpose_achievability.get(d, 0.5))
+                            for d in new_desires.keys()
+                            if transfer_amounts.get(d, 0) < 0
+                        )
+                        if total_weight > 0:
+                            new_desires[desire_name] += total_to_transfer * (weight / total_weight)
+        
+        # 确保非负并归一化
+        for key in new_desires:
+            new_desires[key] = max(0.0, new_desires[key])
+        
+        total = sum(new_desires.values())
+        if total > 0:
+            for key in new_desires:
+                new_desires[key] /= total
+        
+        self.stats['owning_bias_applied_count'] += 1
+        
+        return new_desires
     
     def apply_owning_bias(self, 
                          desire_name: str, 
                          satisfaction_amount: float, 
                          current_value: float) -> float:
         """
-        应用边际效用递减偏见
+        应用边际效用递减偏见（传统方式，保留用于兼容）
         
         已经被满足的欲望，其权重会降低
         体现"越满足越不在乎"的特性
@@ -249,7 +335,7 @@ class BiasSystem:
                                 satisfaction_deltas: Dict[str, float],
                                 current_desires: Dict[str, float]) -> Dict[str, float]:
         """
-        批量应用边际效用递减
+        批量应用边际效用递减（传统方式，保留用于兼容）
         
         对所有被满足的欲望同时应用递减
         
