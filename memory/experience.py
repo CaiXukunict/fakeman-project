@@ -18,20 +18,25 @@ class Experience:
     记录一次完整的"情境-思考-行动-结果"循环
     包含成就感和无聊机制相关字段
     """
-    # 基础信息
+    # 基础信息（必需字段，无默认值）
     id: int
     timestamp: float
     cycle_id: int  # 决策周期ID
     
-    # 情境信息
+    # 情境信息（必需字段）
     context: str  # 用户输入/环境状态
     context_hash: str  # 情境哈希（用于快速匹配）
+    
+    # 目的和手段（必需字段）
+    purpose: str  # 本次行动的目的（从欲望派生）
+    means: str  # 采取的手段（具体行动）
+    
+    # 以下为可选字段（有默认值）
+    # 情境特征
     context_features: Dict[str, Any] = field(default_factory=dict)  # 提取的特征
     
-    # 目的和手段
-    purpose: str  # 本次行动的目的（从欲望派生）
+    # 目的和手段详情
     purpose_desires: Dict[str, float] = field(default_factory=dict)  # 目的涉及的欲望
-    means: str  # 采取的手段（具体行动）
     means_type: str = 'ask_question'  # 手段类型（ask/state/wait等）
     
     # 思考信息

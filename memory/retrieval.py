@@ -279,6 +279,27 @@ class ExperienceRetriever:
         
         return achievements[:top_k]
     
+    def retrieve_by_means_type(self, means_type: str, top_k: int = 10) -> List[Experience]:
+        """
+        按手段类型检索经验
+        
+        Args:
+            means_type: 手段类型（如 'proactive', 'ask_question', 'make_statement'）
+            top_k: 返回的最大数量
+        
+        Returns:
+            匹配的经验列表，按时间倒序
+        """
+        all_experiences = self.database.get_all_experiences()
+        
+        # 筛选匹配的手段类型
+        matching = [exp for exp in all_experiences if exp.means_type == means_type]
+        
+        # 按时间倒序排序（最新的在前）
+        matching.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        return matching[:top_k]
+    
     def calculate_means_bias(self,
                             means: str,
                             means_type: str,
