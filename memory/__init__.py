@@ -12,12 +12,15 @@ from .similarity import (
     calculate_experience_similarity
 )
 from .retrieval import ExperienceRetriever
+from .long_term_memory import LongTermMemory, MemorySummary
 
 __all__ = [
     'Experience',
     'PurposeRecord',
     'MemoryDatabase',
     'ExperienceRetriever',
+    'LongTermMemory',
+    'MemorySummary',
     'calculate_context_similarity',
     'calculate_purpose_overlap',
     'calculate_means_similarity',

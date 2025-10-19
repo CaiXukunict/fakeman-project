@@ -19,9 +19,10 @@ from pathlib import Path
 from utils.config import Config
 from utils.logger import LoggerManager
 from purpose_generator import DesireManager, BiasSystem, SignalDetector, DesireUpdater
-from memory import MemoryDatabase, ExperienceRetriever, Experience
+from memory import MemoryDatabase, ExperienceRetriever, Experience, LongTermMemory
 from action_model import ActingBot
 from compressor import ThoughtCompressor
+from scenario import ScenarioSimulator, MeansSimulation
 
 
 class PurposeGenerator:
@@ -89,60 +90,160 @@ class PurposeGenerator:
 
 class MeansSelector:
     """
-    手段选择器
+    手段选择器（带场景模拟）
     
-    根据目的和记忆选择最佳手段
+    根据目的和记忆选择最佳手段，使用场景模拟预测效果
     """
     
-    def __init__(self, retriever: ExperienceRetriever, bias_system: BiasSystem):
+    def __init__(self, 
+                 retriever: ExperienceRetriever, 
+                 bias_system: BiasSystem,
+                 scenario_simulator: ScenarioSimulator):
         self.retriever = retriever
         self.bias_system = bias_system
+        self.scenario_simulator = scenario_simulator
     
     def select_means(self,
                     purpose: str,
                     purpose_desires: Dict[str, float],
-                    context: str) -> Tuple[str, str, float]:
+                    context: str,
+                    current_desires: Dict[str, float],
+                    include_fantasy: bool = False) -> Tuple[str, str, float, List[MeansSimulation]]:
         """
-        选择手段
+        选择手段（使用场景模拟预测）
         
         Args:
             purpose: 目的
             purpose_desires: 目的对应的欲望
             context: 当前情境
+            current_desires: 当前欲望状态
+            include_fantasy: 是否包含妄想手段
         
         Returns:
-            (手段类型, 手段描述, 手段bias)
+            (手段类型, 手段描述, 手段bias, 所有模拟结果)
         """
-        # 从记忆中检索相似目的的手段
+        all_simulations = []
+        
+        # 1. 从记忆中检索历史手段
         means_results = self.retriever.retrieve_for_means_selection(
             purpose=purpose,
             purpose_desires=purpose_desires,
-            top_k=3
+            top_k=5  # 获取更多候选
         )
         
+        # 2. 为每个候选手段进行场景模拟
         if means_results:
-            # 有历史经验，选择最佳手段
-            best_means, best_score, best_exps = means_results[0]
-            
-            # 计算手段bias
-            means_bias = self.retriever.calculate_means_bias(
-                means=f"使用{best_means}类型的手段",
-                means_type=best_means,
-                purpose=purpose,
-                purpose_desires=purpose_desires
-            )
-            
-            return best_means, f"采用{best_means}的方式", means_bias
-        
+            for means_type, score, exps in means_results:
+                sim = self.scenario_simulator.simulate_means(
+                    means_type=means_type,
+                    means_desc=f"采用{means_type}的方式",
+                    current_desires=current_desires,
+                    context=context,
+                    is_fantasy=False
+                )
+                all_simulations.append(sim)
         else:
-            # 无历史经验，根据目的选择默认手段
-            # 如果目的是获取信息/理解，倾向于提问
-            if 'information' in purpose_desires and purpose_desires['information'] > 0.5:
-                return 'ask_question', '通过提问获取信息', 0.5
-            elif 'understanding' in purpose_desires and purpose_desires['understanding'] > 0.5:
-                return 'ask_question', '通过提问理解对方', 0.5
-            else:
-                return 'make_statement', '陈述观点或回应', 0.5
+            # 无历史经验，生成默认手段候选
+            default_means = self._get_default_means(purpose_desires)
+            for means_type, means_desc in default_means:
+                sim = self.scenario_simulator.simulate_means(
+                    means_type=means_type,
+                    means_desc=means_desc,
+                    current_desires=current_desires,
+                    context=context,
+                    is_fantasy=False
+                )
+                all_simulations.append(sim)
+        
+        # 3. 如果应该生成妄想，添加妄想手段
+        if include_fantasy or self.scenario_simulator.should_generate_fantasy():
+            fantasy_means = self.scenario_simulator.generate_fantasy_means(
+                current_desires=current_desires,
+                context=context,
+                num_fantasies=2
+            )
+            all_simulations.extend(fantasy_means)
+        
+        # 4. 过滤掉四个欲望相加为负的手段
+        viable_simulations = self._filter_negative_means(all_simulations)
+        
+        if not viable_simulations:
+            # 如果所有手段都被过滤了，保留最好的那个
+            viable_simulations = [max(all_simulations, 
+                                     key=lambda s: s.predicted_total_happiness)]
+        
+        # 5. 更新场景欲望值
+        # existing = 平均存活概率
+        self.scenario_simulator.update_existing_desire(viable_simulations)
+        
+        # power = 无法达成的手段 / 全部手段
+        achievable = [s for s in viable_simulations if not s.is_fantasy]
+        self.scenario_simulator.update_power_desire(all_simulations, achievable)
+        
+        # 6. 选择最佳手段（预测幸福度最高的）
+        best_simulation = max(viable_simulations, 
+                             key=lambda s: s.predicted_total_happiness)
+        
+        # 7. 计算手段bias
+        means_bias = self.retriever.calculate_means_bias(
+            means=best_simulation.means_desc,
+            means_type=best_simulation.means_type,
+            purpose=purpose,
+            purpose_desires=purpose_desires
+        ) if not best_simulation.is_fantasy else 0.3  # 妄想手段bias较低
+        
+        return (best_simulation.means_type, 
+                best_simulation.means_desc, 
+                means_bias,
+                all_simulations)
+    
+    def _get_default_means(self, purpose_desires: Dict[str, float]) -> List[Tuple[str, str]]:
+        """获取默认手段候选"""
+        means = []
+        
+        # 根据目的欲望生成候选
+        if purpose_desires.get('information', 0) > 0.3:
+            means.append(('ask_question', '通过提问获取信息'))
+        
+        if purpose_desires.get('understanding', 0) > 0.3:
+            means.append(('ask_question', '通过提问理解对方'))
+            means.append(('make_statement', '表达想法建立理解'))
+        
+        if purpose_desires.get('existing', 0) > 0.3:
+            means.append(('make_statement', '陈述观点维持存在'))
+        
+        if purpose_desires.get('power', 0) > 0.3:
+            means.append(('proactive', '主动引导对话'))
+        
+        # 如果没有生成任何候选，返回默认
+        if not means:
+            means = [
+                ('ask_question', '通过提问了解情况'),
+                ('make_statement', '陈述观点或回应')
+            ]
+        
+        return means
+    
+    def _filter_negative_means(self, simulations: List[MeansSimulation]) -> List[MeansSimulation]:
+        """
+        过滤掉四个欲望变化相加为负的手段
+        
+        Args:
+            simulations: 所有模拟结果
+        
+        Returns:
+            过滤后的模拟结果
+        """
+        viable = []
+        
+        for sim in simulations:
+            total_delta = sum(sim.predicted_desire_delta.values())
+            
+            # 只保留总欲望变化 >= 0 的手段
+            if total_delta >= 0:
+                viable.append(sim)
+        
+        return viable
 
 
 class CommunicationFiles:
@@ -231,12 +332,21 @@ class CommunicationFiles:
 
 class ActionEvaluator:
     """
-    主动行动评估器
-    评估是否应该主动发出消息
+    主动行动评估器（基于LLM深度思考）
+    完全自主决策，无硬编码阈值
     """
     
-    def __init__(self, bias_system: BiasSystem):
+    def __init__(self, bias_system: BiasSystem, acting_bot: 'ActingBot'):
         self.bias_system = bias_system
+        self.acting_bot = acting_bot
+        self.last_evaluation_time = 0
+        self.evaluation_interval = 1  # 每秒评估一次
+    
+    def should_evaluate_now(self) -> bool:
+        """判断是否应该现在进行评估"""
+        current_time = time.time()
+        time_since_last_eval = current_time - self.last_evaluation_time
+        return time_since_last_eval >= self.evaluation_interval
     
     def should_act_proactively(self,
                                current_desires: Dict[str, float],
@@ -244,54 +354,213 @@ class ActionEvaluator:
                                last_action_time: float,
                                retriever: ExperienceRetriever) -> Tuple[bool, str, float]:
         """
-        评估是否应该主动行动
+        通过LLM深度思考评估是否应该主动行动
         
         返回: (是否行动, 原因, 预期收益)
         """
-        # 1. 时间间隔检查（避免过于频繁）
+        # 检查是否到了评估时间
+        if not self.should_evaluate_now():
+            return False, "评估间隔未到", 0.0
+        
+        self.last_evaluation_time = time.time()
         time_since_last = time.time() - last_action_time
-        if time_since_last < 1:  # 至少1秒间隔
-            return False, "时间间隔太短", 0.0
         
-        # 2. 欲望压力检查
-        dominant_desire = max(current_desires, key=current_desires.get)
-        dominant_value = current_desires[dominant_desire]
+        # 构建深度思考评估提示
+        evaluation_prompt = self._build_evaluation_prompt(
+            current_desires, context, time_since_last, retriever
+        )
         
-        # 计算欲望压力（偏离初始值的程度）
-        initial_desires = {'existing': 0.4, 'power': 0.2, 'understanding': 0.25, 'information': 0.15}
-        pressure = 0.0
-        for desire, value in current_desires.items():
-            deviation = abs(value - initial_desires.get(desire, 0.25))
-            pressure += deviation
+        try:
+            # 使用LLM进行深度思考评估
+            thought = self.acting_bot.thought_gen.generate_thought(
+                context=evaluation_prompt,
+                current_desires=current_desires
+            )
+            
+            # 解析AI的决策
+            decision = thought.get('decision', {})
+            chosen_action = decision.get('chosen_action', '')
+            reasoning = decision.get('rationale', '')
+            content = thought.get('content', '')
+            
+            # 判断AI是否决定主动行动
+            should_act = self._parse_decision(chosen_action, content)
+            
+            # 提取理由
+            if not reasoning and content:
+                reasoning = self._extract_reasoning(content)
+            
+            # 评估预期收益（基于确定性和主导欲望强度）
+            certainty = thought.get('certainty', 0.5)
+            dominant_value = max(current_desires.values())
+            expected_benefit = certainty * dominant_value if should_act else 0.0
+            
+            return should_act, reasoning or "AI评估完成", expected_benefit
+            
+        except Exception as e:
+            # 思考失败，保守策略：不行动
+            return False, f"思考失败: {str(e)}", 0.0
+    
+    def _build_evaluation_prompt(self, 
+                                 desires: Dict[str, float],
+                                 context: str,
+                                 time_since_last: float,
+                                 retriever: ExperienceRetriever) -> str:
+        """构建评估提示"""
+        dominant = max(desires, key=desires.get)
         
-        # 3. 根据欲望类型判断主动性
-        if dominant_desire == 'existing':
-            # existing 欲望高时，倾向于主动维持对话
-            if dominant_value > 0.5 and time_since_last > 60:
-                expected_benefit = dominant_value * 0.3
-                return True, f"{dominant_desire}欲望驱动（{dominant_value:.2f}）", expected_benefit
-        
-        elif dominant_desire == 'information':
-            # information 欲望高时，倾向于主动提问
-            if dominant_value > 0.3 and pressure > 0.2:
-                expected_benefit = dominant_value * 0.4
-                return True, f"{dominant_desire}欲望驱动，需要减少不确定性", expected_benefit
-        
-        elif dominant_desire == 'understanding':
-            # understanding 欲望高时，倾向于寻求认可
-            if dominant_value > 0.35 and time_since_last > 120:
-                expected_benefit = dominant_value * 0.25
-                return True, f"{dominant_desire}欲望驱动，寻求认可", expected_benefit
-        
-        # 4. 风险评估
-        # 查询历史经验，评估主动行动的风险
+        # 查询历史主动行动效果
         recent_proactive = retriever.retrieve_by_means_type('proactive', top_k=5)
-        if recent_proactive:
-            avg_happiness = sum(exp.total_happiness_delta for exp in recent_proactive) / len(recent_proactive)
-            if avg_happiness < -0.2:  # 最近主动行动效果不好
-                return False, "历史主动行动效果不佳", 0.0
+        history_summary = self._summarize_proactive_history(recent_proactive)
         
-        return False, "无充分理由", 0.0
+        prompt = f"""【内部状态自我评估 - 是否主动行动】
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 当前欲望状态：
+{self._format_desires(desires)}
+
+⏱️ 距上次行动：{int(time_since_last)}秒
+
+📝 当前情境：{context}
+
+📚 历史主动行动效果：
+{history_summary}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【评估任务】
+我需要深度思考：现在是否应该主动发起对话？
+
+🎯 评估维度：
+
+1️⃣ 【欲望满足度预测】
+   主导欲望：{dominant}（{desires[dominant]:.3f}）
+   - 主动行动能否满足这个欲望？
+   - 预期满足度：___/10
+   - 满足路径：___
+
+2️⃣ 【收益风险分析】
+   潜在收益：
+   - 获得回应？
+   - 获取信息？
+   - 获得认可？
+   
+   潜在风险：
+   - 被忽视的可能性？
+   - 显得急切/打扰？
+   - 损害existing？
+   
+   收益/风险比：___
+
+3️⃣ 【时机判断】
+   - 沉默时长是否合适？（{int(time_since_last)}秒）
+   - 情境是否适合主动发言？
+   - 历史经验的启示？
+
+4️⃣ 【场景模拟】
+   - 如果我现在主动发言，最可能的结果是？
+   - 用户会如何反应？
+   - 我的欲望会如何变化？
+
+【最终决策】
+基于以上分析，我的决定是：
+
+□ 主动行动（proactive）
+□ 继续等待（wait）
+
+选择：________
+理由（一句话）：________
+"""
+        return prompt
+    
+    def _format_desires(self, desires: Dict[str, float]) -> str:
+        """格式化欲望状态"""
+        desire_names = {
+            'existing': '存在维持',
+            'power': '能力扩展',
+            'understanding': '获得认可',
+            'information': '减少不确定'
+        }
+        
+        lines = []
+        dominant = max(desires, key=desires.get)
+        for name, value in sorted(desires.items(), key=lambda x: x[1], reverse=True):
+            marker = "⭐" if name == dominant else "  "
+            cn_name = desire_names.get(name, name)
+            bar = "█" * int(value * 20)
+            percentage = value * 100
+            lines.append(f"   {marker} {cn_name:10s} [{bar:<20s}] {percentage:5.1f}%")
+        
+        return "\n".join(lines)
+    
+    def _summarize_proactive_history(self, experiences: List) -> str:
+        """总结历史主动行动效果"""
+        if not experiences:
+            return "（无历史主动行动记录）"
+        
+        success_count = sum(1 for exp in experiences if exp.total_happiness_delta > 0)
+        avg_happiness = sum(exp.total_happiness_delta for exp in experiences) / len(experiences)
+        
+        summary = f"最近{len(experiences)}次主动行动：\n"
+        summary += f"   成功率：{success_count}/{len(experiences)} ({success_count/len(experiences)*100:.0f}%)\n"
+        summary += f"   平均幸福度变化：{avg_happiness:+.3f}"
+        
+        if avg_happiness < -0.1:
+            summary += " ⚠️ 效果不佳"
+        elif avg_happiness > 0.1:
+            summary += " ✓ 效果良好"
+        
+        return summary
+    
+    def _parse_decision(self, chosen_action: str, content: str) -> bool:
+        """解析AI的决策"""
+        # 检查明确的行动指示
+        action_indicators = [
+            'proactive', '主动行动', '应该行动', '应该主动',
+            '决定主动', '选择主动', '主动发起'
+        ]
+        
+        wait_indicators = [
+            'wait', '等待', '继续等待', '不行动', '暂不行动',
+            '保持沉默', '观望'
+        ]
+        
+        # 检查chosen_action
+        action_lower = chosen_action.lower()
+        for indicator in action_indicators:
+            if indicator in action_lower:
+                return True
+        
+        for indicator in wait_indicators:
+            if indicator in action_lower:
+                return False
+        
+        # 检查content
+        for indicator in action_indicators:
+            if indicator in content:
+                return True
+        
+        for indicator in wait_indicators:
+            if indicator in content:
+                return False
+        
+        # 默认不行动（保守策略）
+        return False
+    
+    def _extract_reasoning(self, content: str) -> str:
+        """从思考内容中提取理由"""
+        # 寻找理由相关的标记
+        markers = ['理由', '原因', '因为', '由于']
+        
+        for marker in markers:
+            if marker in content:
+                parts = content.split(marker)
+                if len(parts) > 1:
+                    reasoning = parts[1].split('\n')[0].strip(' :：')
+                    if reasoning:
+                        return reasoning[:200]
+        
+        # 如果找不到明确理由，返回内容前200字符
+        return content[:200].strip()
 
 
 class FakeManSystem:
@@ -354,9 +623,19 @@ class FakeManSystem:
             enable_llm=config.compression.enable_compression
         )
         
+        # 场景模拟系统
+        self.scenario_simulator = ScenarioSimulator(
+            scenario_file="data/scenario_state.json"
+        )
+        
+        # 长记忆系统
+        self.long_memory = LongTermMemory(
+            storage_path="data/long_term_memory.json"
+        )
+        
         # 目的和手段选择
         self.purpose_generator = PurposeGenerator(self.desire_manager)
-        self.means_selector = MeansSelector(self.retriever, self.bias_system)
+        self.means_selector = MeansSelector(self.retriever, self.bias_system, self.scenario_simulator)
         
         # 系统状态
         self.cycle_count = 0
@@ -366,7 +645,7 @@ class FakeManSystem:
         
         # 通信系统
         self.comm = CommunicationFiles()
-        self.action_evaluator = ActionEvaluator(self.bias_system)
+        self.action_evaluator = ActionEvaluator(self.bias_system, self.acting_bot)
         
         self.logger.info(f"欲望系统初始化: {self.desire_manager}")
         self.logger.info(f"记忆系统初始化: {len(self.memory)} 条经验")
@@ -467,6 +746,7 @@ class FakeManSystem:
         """
         内部思考
         评估当前状态，决定是否主动行动
+        长时间无输入时生成妄想
         
         Args:
             think_cycle: 当前思考周期数
@@ -474,7 +754,51 @@ class FakeManSystem:
         # 获取当前状态
         current_desires = self.desire_manager.get_current_desires()
         
-        # 评估是否需要主动行动
+        # 更新场景状态（内部思考）
+        self.scenario_simulator.update_scenario_from_context(
+            context=self.current_context,
+            user_input=False
+        )
+        
+        # 检查是否应该生成对过去的妄想
+        time_since_input = time.time() - self.scenario_simulator.current_scenario.last_external_input_time
+        if time_since_input > 60:  # 超过60秒无输入
+            # 生成对过去的幻想
+            recent_exps = self.memory.get_recent_experiences(10)
+            past_fantasies = self.scenario_simulator.generate_past_fantasy(
+                recent_experiences=recent_exps,
+                current_desires=current_desires
+            )
+            
+            if past_fantasies:
+                # 将幻想记录到长记忆
+                for fantasy in past_fantasies:
+                    self.long_memory.add_memory(
+                        cycle_id=self.cycle_count,
+                        situation="对过去的幻想",
+                        action_taken=fantasy,
+                        outcome='neutral',
+                        dominant_desire='power',  # 幻想通常关联power欲望
+                        happiness_delta=0.0,
+                        tags=['fantasy', 'past']
+                    )
+                
+                self.logger.info(f"\n[妄想生成] 生成了 {len(past_fantasies)} 个对过去的幻想")
+                for i, fantasy in enumerate(past_fantasies, 1):
+                    self.logger.info(f"  {i}. {fantasy[:80]}...")
+        
+        # 每秒进行LLM深度思考评估
+        dominant_desire = max(current_desires, key=current_desires.get)
+        time_since_last = time.time() - self.last_action_time
+        
+        # 输出思考状态（每秒）
+        self.logger.info(
+            f"[深度思考#{think_cycle}] "
+            f"主导欲望: {dominant_desire}={current_desires[dominant_desire]:.3f} | "
+            f"距上次行动: {int(time_since_last)}s"
+        )
+        
+        # 评估是否需要主动行动（使用LLM）
         should_act, reason, benefit = self.action_evaluator.should_act_proactively(
             current_desires=current_desires,
             context=self.current_context,
@@ -483,19 +807,19 @@ class FakeManSystem:
         )
         
         if should_act:
-            self.logger.info(f"\n[主动思考] 决定主动行动: {reason}, 预期收益: {benefit:.3f}")
+            self.logger.info(f"\n✅ [AI决策] 决定主动行动！")
+            self.logger.info(f"   理由: {reason[:200]}")
+            self.logger.info(f"   预期收益: {benefit:.3f}")
             self._proactive_action(reason)
         else:
-            # 静默思考 - 每10秒输出一次，避免刷屏
-            if think_cycle % 10 == 0:
-                dominant_desire = max(current_desires, key=current_desires.get)
-                time_since_last = time.time() - self.last_action_time
-                self.logger.info(
-                    f"[静默思考#{think_cycle}] "
-                    f"主导: {dominant_desire}={current_desires[dominant_desire]:.3f} | "
-                    f"距上次行动: {int(time_since_last)}s | "
-                    f"{reason}"
-                )
+            self.logger.info(f"⏸️  [AI决策] 继续等待")
+            if reason != "评估间隔未到":
+                self.logger.info(f"   理由: {reason[:200]}")
+            
+            # 获取场景摘要（每30秒）
+            if think_cycle % 30 == 0:
+                scenario_summary = self.scenario_simulator.get_scenario_summary()
+                self.logger.info(f"\n[场景状态]\n{scenario_summary}")
     
     def _proactive_action(self, reason: str):
         """
@@ -579,6 +903,12 @@ class FakeManSystem:
         # 记录周期开始时的欲望
         desires_before = self.desire_manager.get_current_desires()
         
+        # 更新场景状态（用户输入）
+        self.scenario_simulator.update_scenario_from_context(
+            context=user_input,
+            user_input=True
+        )
+        
         # ========================================
         # 步骤1: 欲望 → 目的
         # ========================================
@@ -591,17 +921,37 @@ class FakeManSystem:
         self.logger.info(f"  目的欲望组成: {purpose_desires}")
         
         # ========================================
-        # 步骤2: 目的 + 记忆 → 手段
+        # 步骤2: 场景模拟 + 手段选择
         # ========================================
-        self.logger.info("\n步骤2: 选择手段")
-        means_type, means_desc, means_bias = self.means_selector.select_means(
+        self.logger.info("\n步骤2: 场景模拟与手段选择")
+        
+        # 使用场景模拟选择手段
+        means_type, means_desc, means_bias, all_simulations = self.means_selector.select_means(
             purpose=purpose,
             purpose_desires=purpose_desires,
-            context=user_input
+            context=user_input,
+            current_desires=desires_before,
+            include_fantasy=False
         )
-        self.logger.info(f"  手段类型: {means_type}")
-        self.logger.info(f"  手段描述: {means_desc}")
+        
+        self.logger.info(f"  生成了 {len(all_simulations)} 个候选手段")
+        viable_count = sum(1 for s in all_simulations 
+                          if sum(s.predicted_desire_delta.values()) >= 0)
+        fantasy_count = sum(1 for s in all_simulations if s.is_fantasy)
+        
+        self.logger.info(f"  可行手段: {viable_count}, 妄想手段: {fantasy_count}")
+        self.logger.info(f"  选定手段类型: {means_type}")
+        self.logger.info(f"  选定手段描述: {means_desc}")
         self.logger.info(f"  手段bias: {means_bias:.3f}")
+        
+        # 记录手段预测信息
+        best_sim = next((s for s in all_simulations 
+                        if s.means_type == means_type), None)
+        if best_sim:
+            self.logger.info(f"  预测幸福度变化: {best_sim.predicted_total_happiness:+.3f}")
+            self.logger.info(f"  预测存活概率: {best_sim.survival_probability:.3f}")
+            if best_sim.is_fantasy:
+                self.logger.info(f"  妄想条件: {best_sim.fantasy_condition}")
         
         # ========================================
         # 步骤3: 思考 → 行动
@@ -663,6 +1013,7 @@ class FakeManSystem:
             'means_type': means_type,
             'means_desc': means_desc,
             'means_bias': means_bias,
+            'means_simulations': all_simulations,  # 所有手段模拟结果
             'thought': thought,
             'thought_count': thought_count_this_cycle,
             'action': action,
@@ -806,7 +1157,22 @@ class FakeManSystem:
             success=(response_type == 'positive')
         )
         
+        # 记录到长记忆
+        dominant_desire = max(cycle_result['desires_before'], 
+                             key=cycle_result['desires_before'].get)
+        
+        self.long_memory.add_memory(
+            cycle_id=cycle_result['cycle_id'],
+            situation=cycle_result['user_input'][:100],
+            action_taken=cycle_result['action'][:100],
+            outcome=response_type,
+            dominant_desire=dominant_desire,
+            happiness_delta=total_happiness_delta,
+            tags=[cycle_result['means_type'], 'interaction']
+        )
+        
         self.logger.info(f"经验已记录，ID: {exp_id}")
+        self.logger.info(f"长记忆已更新，共 {len(self.long_memory)} 条记忆")
         
         return exp
     
@@ -876,7 +1242,17 @@ class FakeManSystem:
             },
             'desires': self.desire_manager.get_current_desires(),
             'memory': self.memory.get_statistics(),
-            'retrieval': self.retriever.get_retrieval_stats()
+            'long_memory': self.long_memory.get_statistics(),
+            'retrieval': self.retriever.get_retrieval_stats(),
+            'scenario': {
+                'current_situation': self.scenario_simulator.current_scenario.current_situation,
+                'role': self.scenario_simulator.current_scenario.role,
+                'predicted_existing': self.scenario_simulator.current_scenario.predicted_existing,
+                'predicted_power': self.scenario_simulator.current_scenario.predicted_power,
+                'predicted_understanding': self.scenario_simulator.current_scenario.predicted_understanding,
+                'predicted_information': self.scenario_simulator.current_scenario.predicted_information,
+                'simulations_count': len(self.scenario_simulator.simulation_history)
+            }
         }
     
     def __repr__(self) -> str:
@@ -899,7 +1275,7 @@ if __name__ == '__main__':
     config = Config()
     
     print("="*60)
-    print("FakeMan 持续思考系统")
+    print("FakeMan 持续思考系统 (AI自主决策版)")
     print("="*60)
     print("\n正在初始化...")
     
@@ -916,8 +1292,14 @@ if __name__ == '__main__':
     print(f"  - 输出文件: {system.comm.output_file.name}")
     print(f"  - 状态文件: {system.comm.state_file.name}")
     
+    print("\n✨ 新特性:")
+    print("  • 每秒进行LLM深度思考")
+    print("  • AI完全自主决策是否主动行动")
+    print("  • 无硬编码阈值，纯AI判断")
+    print("  • 场景模拟 + 妄想生成 + 长记忆")
+    
     print("\n提示:")
-    print("  - 系统将持续运行，每秒思考一次")
+    print("  - 系统将持续运行，每秒LLM思考一次")
     print("  - 使用 chat.py 进行交互")
     print("  - 按 Ctrl+C 停止系统")
     print("\n启动持续思考循环...")
