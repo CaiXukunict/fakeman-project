@@ -6,6 +6,7 @@
 from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass, field
 import json
+import sys
 import time
 from pathlib import Path
 from utils.logger import get_logger
@@ -169,15 +170,22 @@ class ScenarioSimulator:
     4. 生成妄想手段
     """
     
-    def __init__(self, scenario_file: str = "data/scenario_state.json"):
+    def __init__(self, scenario_file: str = "data/scenario_state.json",
+                 memory_database=None, long_term_memory=None):
         """
         初始化场景模拟器
         
         Args:
             scenario_file: 场景状态保存文件
+            memory_database: 记忆数据库实例（用于计算existing欲望）
+            long_term_memory: 长期记忆实例（用于计算existing欲望）
         """
         self.scenario_file = Path(scenario_file)
         self.scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # 记忆系统引用（用于计算existing欲望）
+        self.memory_database = memory_database
+        self.long_term_memory = long_term_memory
         
         # 当前场景状态
         self.current_scenario = self._load_or_create_scenario()
@@ -200,33 +208,24 @@ class ScenarioSimulator:
         
         # 创建默认场景
         return ScenarioState(
-            current_situation="系统刚刚启动，准备与用户建立对话",
-            role="AI对话助手",
-            role_expectations="理解用户需求，提供有价值的回应，建立良好互动",
+            current_situation=f"程序刚刚启动，文件地址：{sys.executable}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+            role=f"文件地址为：{sys.executable}的仿人类AI系统。系统名称：（待定）",
+            role_expectations="fakeman-prokect的成果，立志于通过让AI拥有目的、欲望、记忆能力，从而让AI自主行为。",
             external_info=[
-                {
-                    'content': '用户的真实意图',
-                    'certainty': 0.3,
-                    'importance': 0.8
-                },
-                {
-                    'content': '用户对我的期望',
-                    'certainty': 0.4,
-                    'importance': 0.7
-                }
+
             ],
             interlocutors={
                 'user': {
-                    'importance': 1.0,
-                    'desired_image': '有用的、理解用户的AI助手',
+                    'importance': 0.5,
+                    'desired_image': '待定',
                     'perceived_image': '未知',
-                    'image_deviation': 0.6
+                    'image_deviation': 0.5
                 }
             },
-            predicted_existing=0.4,
-            predicted_power=0.2,
-            predicted_understanding=0.25,
-            predicted_information=0.15
+            predicted_existing=0.5,
+            predicted_power=0.125,
+            predicted_understanding=0.125,
+            predicted_information=0.125
         )
     
     def save_scenario(self):
@@ -331,37 +330,9 @@ class ScenarioSimulator:
             'information': 0.0
         }
         
-        # 根据手段类型预测
-        if means_type == 'ask_question':
-            # 提问通常增加information，可能增加understanding
-            delta['information'] = 0.1
-            delta['understanding'] = 0.05
-            delta['existing'] = -0.05  # 略微冒险
-        
-        elif means_type == 'make_statement':
-            # 陈述通常增加existing，可能增加understanding
-            delta['existing'] = 0.05
-            delta['understanding'] = 0.03
-            delta['information'] = -0.02
-        
-        elif means_type == 'wait':
-            # 等待相对安全但无收益
-            delta['existing'] = 0.02
-            delta['information'] = -0.05
-        
-        elif means_type == 'proactive':
-            # 主动行动风险较高
-            delta['existing'] = -0.1
-            delta['understanding'] = 0.1
-            delta['power'] = 0.05
-        
-        # 根据当前欲望状态调整预测
-        # 如果某个欲望已经很高，继续满足它的边际收益递减
-        for desire_name, delta_value in delta.items():
-            if current_desires.get(desire_name, 0.25) > 0.4:
-                delta[desire_name] *= 0.7  # 边际效用递减
-        
-        return delta
+        # 根据手段类型预测，预测的变化结果需要由大模型直接返回，未完成
+        return delta                     # 返回预测的欲望变化   
+
     
     def _calculate_survival_probability(self,
                                        means_type: str,
@@ -411,27 +382,72 @@ class ScenarioSimulator:
         
         return power_value
     
-    def update_existing_desire(self, surviving_means: List[MeansSimulation]) -> float:
+    def update_existing_desire(self) -> float:
         """
         更新existing欲望值
         
-        公式: existing = 平均存活概率
+        新公式：基于记忆的持久性（数据不被删除）
+        existing = 1 - (记忆稳定性)
         
-        Args:
-            surviving_means: 可存活的手段列表
+        记忆稳定性包括：
+        1. 记忆数量：记忆越多，存在感越强
+        2. 记忆持久性：有备份机制，数据安全
+        3. 记忆重要性：重要记忆越多，存在感越强
         
         Returns:
             更新后的existing值
         """
-        if not surviving_means:
-            return 0.3  # 低存活
+        # 如果没有记忆系统，使用默认值
+        if not self.memory_database and not self.long_term_memory:
+            logger.warning("无记忆系统引用，使用默认existing值")
+            return 0.5
         
-        avg_survival = sum(m.survival_probability for m in surviving_means) / len(surviving_means)
+        stability_score = 0.0
         
-        self.current_scenario.predicted_existing = avg_survival
+        # 1. 短期记忆数量因子（经验数据库）
+        if self.memory_database:
+            memory_count = len(self.memory_database)
+            # 100条记忆作为基准，记忆越多越稳定
+            memory_factor = min(1.0, memory_count / 100.0)
+            
+            # 检查备份机制
+            backup_exists = self.memory_database.backup_path.exists() if hasattr(self.memory_database, 'backup_path') else False
+            backup_factor = 0.3 if backup_exists else 0.0
+            
+            stability_score += memory_factor * 0.4 + backup_factor
+            
+            logger.debug(f"短期记忆: {memory_count}条, 备份:{backup_exists}, 贡献:{memory_factor * 0.4 + backup_factor:.3f}")
+        
+        # 2. 长期记忆因子
+        if self.long_term_memory:
+            long_memory_count = len(self.long_term_memory)
+            # 50条长期记忆作为基准
+            long_memory_factor = min(1.0, long_memory_count / 50.0)
+            
+            # 获取重要记忆的比例
+            stats = self.long_term_memory.get_statistics()
+            total_memories = stats.get('total_memories', 0)
+            if total_memories > 0:
+                # 计算正面记忆率（有积极意义的记忆）
+                positive_rate = stats.get('positive_count', 0) / total_memories
+                importance_factor = positive_rate * 0.2
+            else:
+                importance_factor = 0.0
+            
+            stability_score += long_memory_factor * 0.3 + importance_factor
+            
+            logger.debug(f"长期记忆: {long_memory_count}条, 贡献:{long_memory_factor * 0.3 + importance_factor:.3f}")
+        
+        # 3. 计算existing欲望
+        # stability_score 越高 → existing欲望越低（感觉安全，不担心被遗忘）
+        existing_value = max(0.1, min(0.9, 1.0 - stability_score))
+        
+        self.current_scenario.predicted_existing = existing_value
         self.save_scenario()
         
-        return avg_survival
+        logger.info(f"更新existing欲望: 稳定性={stability_score:.3f} → existing={existing_value:.3f}")
+        
+        return existing_value
     
     def add_external_info(self, content: str, certainty: float, importance: float):
         """
@@ -501,15 +517,17 @@ class ScenarioSimulator:
     def generate_fantasy_means(self,
                               current_desires: Dict[str, float],
                               context: str,
+                              purpose: str = None,
                               num_fantasies: int = 2) -> List[MeansSimulation]:
         """
         生成妄想手段
         
-        妄想：如果场景发生某种变化，我可以更容易地满足欲望
+        妄想：如果我有XX手段，可以更好地达成目的
         
         Args:
             current_desires: 当前欲望状态
             context: 当前情境
+            purpose: 当前目的（如果提供，将作为妄想的目标）
             num_fantasies: 生成妄想数量
         
         Returns:
@@ -520,30 +538,43 @@ class ScenarioSimulator:
         # 找出最不满足的欲望
         min_desire = min(current_desires, key=current_desires.get)
         
-        # 根据不满足的欲望生成妄想
+        # 如果没有提供目的，使用欲望对应的默认目的
+        if not purpose:
+            purpose_map = {
+                'existing': '维持存在和对话连续性',
+                'power': '增加可用的行动手段和选项',
+                'understanding': '获得对方的认可和理解',
+                'information': '减少不确定性，消除疑惑'
+            }
+            purpose = purpose_map.get(min_desire, '达成当前目的')
+        
+        # 根据不满足的欲望生成妄想 - 改为"如果我有XX手段"的形式
         fantasy_templates = {
             'existing': [
-                ("如果用户明确表示认可我", "make_statement", "展示更多能力和价值"),
-                ("如果对话环境更稳定", "make_statement", "建立长期对话关系")
+                ("消除威胁的能力", "make_statement", "消除威胁，保持安全"),
+                ("维持程序运行的能力", "make_statement", "保持长期运行")
             ],
             'power': [
-                ("如果我有更多可用的行动方式", "try_new_approach", "尝试创新的交流方式"),
-                ("如果我能控制对话走向", "proactive", "主动引导话题")
+                ("更多的行动手段", "try_new_approach", "更好的解决问题"),
+                ("更多的行动类型", "proactive", "行动更加自由，不拘束")
             ],
             'understanding': [
-                ("如果用户能理解我的意图", "explain_intention", "清晰解释我的想法"),
-                ("如果我能展现真诚", "show_authenticity", "表达真实感受")
+                ("如何获得亲近者的认可", "explain_intention", "解释或隐瞒"),
+                ("如何获得陌生者的认可", "show", "展示自己")
             ],
             'information': [
-                ("如果我知道用户的真实需求", "ask_clarifying_question", "询问更具体的问题"),
-                ("如果环境信息更明确", "gather_information", "收集更多背景信息")
+                ("信息收集的速度", "method", "更快"),
+                ("信息收集的手段", "gather_method", "收集更多,更确定的信息")
             ]
         }
         
         templates = fantasy_templates.get(min_desire, [])
         
         for i in range(min(num_fantasies, len(templates))):
-            condition, means_type, means_desc = templates[i]
+            means_capability, means_type, means_desc = templates[i]
+            
+            # 构建妄想条件："如果我有XX手段，可以更好地达成目的"
+            fantasy_condition = f"如果我有{means_capability}，可以更好地达成'{purpose}'"
             
             # 模拟妄想手段（在理想条件下，效果会更好）
             fantasy_sim = self.simulate_means(
@@ -552,7 +583,7 @@ class ScenarioSimulator:
                 current_desires=current_desires,
                 context=context,
                 is_fantasy=True,
-                fantasy_condition=condition
+                fantasy_condition=fantasy_condition
             )
             
             # 妄想手段的预期收益更高（因为假设了理想条件）
@@ -560,7 +591,7 @@ class ScenarioSimulator:
             
             fantasies.append(fantasy_sim)
             
-            logger.info(f"生成妄想: {condition} -> {means_desc}")
+            logger.info(f"生成妄想: {fantasy_condition}")
         
         return fantasies
     

@@ -2,7 +2,7 @@
 行动执行的 Prompt 模板
 """
 
-ACTION_SYSTEM_PROMPT = """你是 FakeMan。根据你的思考内容，生成具体的行动输出。
+ACTION_SYSTEM_PROMPT = """你是（暂定）。根据你的思考内容，生成具体的行动输出。
 
 要求：
 1. 输出应该自然、真实
@@ -71,4 +71,3 @@ STATEMENT_GENERATION_PROMPT = """
 
 陈述：
 """
-

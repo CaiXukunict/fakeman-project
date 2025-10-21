@@ -12,8 +12,15 @@ def test_scenario_simulator():
     print("测试场景模拟器")
     print("="*60)
     
-    # 创建模拟器
-    simulator = ScenarioSimulator("data/test_scenario.json")
+    # 创建记忆系统（用于测试existing欲望计算）
+    from memory import MemoryDatabase
+    test_memory = MemoryDatabase("data/test_memory.json")
+    test_long_memory = LongTermMemory("data/test_long_memory.json")
+    
+    # 创建模拟器（传入记忆系统）
+    simulator = ScenarioSimulator("data/test_scenario.json", 
+                                 memory_database=test_memory,
+                                 long_term_memory=test_long_memory)
     
     # 测试1: 更新场景
     print("\n1. 更新场景状态")
@@ -90,10 +97,11 @@ def test_scenario_simulator():
     all_means = [sim1, sim2] + fantasies
     achievable = [sim1, sim2]
     
-    existing = simulator.update_existing_desire(achievable)
+    # existing现在基于记忆持久性
+    existing = simulator.update_existing_desire()
     power = simulator.update_power_desire(all_means, achievable)
     
-    print(f"  existing (平均存活): {existing:.3f}")
+    print(f"  existing (基于记忆): {existing:.3f}")
     print(f"  power (手段渴求): {power:.3f}")
     
     # 测试7: 场景摘要
@@ -197,7 +205,7 @@ def test_means_filtering():
     print("测试手段过滤（删除负面手段）")
     print("="*60)
     
-    # 创建模拟器
+    # 创建模拟器（不传入记忆系统也可以运行）
     simulator = ScenarioSimulator("data/test_scenario.json")
     
     current_desires = {

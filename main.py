@@ -160,6 +160,7 @@ class MeansSelector:
             fantasy_means = self.scenario_simulator.generate_fantasy_means(
                 current_desires=current_desires,
                 context=context,
+                purpose=purpose,
                 num_fantasies=2
             )
             all_simulations.extend(fantasy_means)
@@ -173,8 +174,8 @@ class MeansSelector:
                                      key=lambda s: s.predicted_total_happiness)]
         
         # 5. 更新场景欲望值
-        # existing = 平均存活概率
-        self.scenario_simulator.update_existing_desire(viable_simulations)
+        # existing = 基于记忆持久性（数据不被删除）
+        self.scenario_simulator.update_existing_desire()
         
         # power = 无法达成的手段 / 全部手段
         achievable = [s for s in viable_simulations if not s.is_fantasy]
@@ -383,6 +384,12 @@ class ActionEvaluator:
             reasoning = decision.get('rationale', '')
             content = thought.get('content', '')
             
+            # 输出完整思考内容（深度评估）
+            if content:
+                from utils.logger import get_logger
+                logger = get_logger('fakeman.main')
+                logger.info(f"\n【深度评估思考过程】\n  {content.replace(chr(10), chr(10) + '  ')}")
+            
             # 判断AI是否决定主动行动
             should_act = self._parse_decision(chosen_action, content)
             
@@ -561,6 +568,13 @@ class ActionEvaluator:
         
         # 如果找不到明确理由，返回内容前200字符
         return content[:200].strip()
+    
+    def _format_thought_content(self, content: str) -> str:
+        """格式化思考内容以便阅读"""
+        # 为每行添加缩进
+        lines = content.split('\n')
+        formatted_lines = ['  ' + line for line in lines]
+        return '\n'.join(formatted_lines)
 
 
 class FakeManSystem:
@@ -623,14 +637,16 @@ class FakeManSystem:
             enable_llm=config.compression.enable_compression
         )
         
-        # 场景模拟系统
-        self.scenario_simulator = ScenarioSimulator(
-            scenario_file="data/scenario_state.json"
-        )
-        
-        # 长记忆系统
+        # 长记忆系统（先初始化，场景模拟器需要引用）
         self.long_memory = LongTermMemory(
             storage_path="data/long_term_memory.json"
+        )
+        
+        # 场景模拟系统（传入记忆系统引用，用于计算existing欲望）
+        self.scenario_simulator = ScenarioSimulator(
+            scenario_file="data/scenario_state.json",
+            memory_database=self.memory,
+            long_term_memory=self.long_memory
         )
         
         # 目的和手段选择
@@ -854,6 +870,11 @@ class FakeManSystem:
         )
         thought_count_this_cycle = self.acting_bot.thought_gen.thought_count - thought_count_before
         
+        # 输出完整思考内容
+        full_thought_content = thought.get('content', '')
+        if full_thought_content:
+            self.logger.info(f"\n【主动行动思考过程】\n{self._format_thought_content(full_thought_content)}")
+        
         # 压缩思考
         compressed = self.compressor.compress(
             full_thought=thought.get('content', ''),
@@ -862,6 +883,7 @@ class FakeManSystem:
             decision=thought.get('decision')
         )
         
+        self.logger.info(f"\n决策: {thought['decision'].get('chosen_action')}")
         self.logger.info(f"行动: {action[:100]}...")
         
         # 写入输出
@@ -968,7 +990,13 @@ class FakeManSystem:
         self.total_thought_count += thought_count_this_cycle
         
         self.logger.info(f"  思考次数: {thought_count_this_cycle}")
-        self.logger.info(f"  决策: {thought['decision'].get('chosen_action')}")
+        
+        # 输出完整思考内容
+        full_thought_content = thought.get('content', '')
+        if full_thought_content:
+            self.logger.info(f"\n  【完整思考过程】\n{self._format_thought_content(full_thought_content)}")
+        
+        self.logger.info(f"\n  决策: {thought['decision'].get('chosen_action')}")
         self.logger.info(f"  行动: {action[:100]}...")
         
         # ========================================
