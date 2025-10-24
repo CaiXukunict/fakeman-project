@@ -4,7 +4,7 @@
 
 import time
 from scenario import ScenarioSimulator, ScenarioState, MeansSimulation
-from memory import LongTermMemory
+from memory import ExperienceMemory
 
 def test_scenario_simulator():
     """测试场景模拟器"""
@@ -15,12 +15,12 @@ def test_scenario_simulator():
     # 创建记忆系统（用于测试existing欲望计算）
     from memory import MemoryDatabase
     test_memory = MemoryDatabase("data/test_memory.json")
-    test_long_memory = LongTermMemory("data/test_long_memory.json")
+    test_experience_memory = ExperienceMemory("data/test_experience_memory.json")
     
     # 创建模拟器（传入记忆系统）
     simulator = ScenarioSimulator("data/test_scenario.json", 
                                  memory_database=test_memory,
-                                 long_term_memory=test_long_memory)
+                                 long_term_memory=test_experience_memory)
     
     # 测试1: 更新场景
     print("\n1. 更新场景状态")
@@ -119,7 +119,7 @@ def test_long_term_memory():
     print("="*60)
     
     # 创建长记忆
-    ltm = LongTermMemory("data/test_long_memory.json")
+    ltm = ExperienceMemory("data/test_experience_memory.json")
     
     # 测试1: 添加记忆
     print("\n1. 添加记忆")

@@ -1,5 +1,5 @@
 """
-长记忆系统
+经验记忆系统
 简要记录历史事件，便于快速回顾
 """
 
@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from utils.logger import get_logger
 
-logger = get_logger('fakeman.long_memory')
+logger = get_logger('fakeman.experience_memory')
 
 
 @dataclass
@@ -63,9 +63,9 @@ class MemorySummary:
                 f"-> {self.action_taken[:20]}... [{self.outcome}])")
 
 
-class LongTermMemory:
+class ExperienceMemory:
     """
-    长期记忆管理器
+    经验记忆管理器
     
     功能：
     1. 简要记录历史事件
@@ -73,9 +73,9 @@ class LongTermMemory:
     3. 生成记忆摘要
     """
     
-    def __init__(self, storage_path: str = "data/long_term_memory.json"):
+    def __init__(self, storage_path: str = "data/experience_memory.json"):
         """
-        初始化长期记忆
+        初始化经验记忆
         
         Args:
             storage_path: 存储文件路径
@@ -90,7 +90,7 @@ class LongTermMemory:
         # 加载已有记忆
         self._load_memories()
         
-        logger.info(f"长期记忆初始化完成，已加载 {len(self.memories)} 条记忆")
+        logger.info(f"经验记忆初始化完成，已加载 {len(self.memories)} 条记忆")
     
     def _load_memories(self):
         """从文件加载记忆"""
@@ -104,7 +104,7 @@ class LongTermMemory:
                     self.next_id = data.get('next_id', 1)
                 logger.info(f"从文件加载了 {len(self.memories)} 条记忆")
             except Exception as e:
-                logger.error(f"加载长期记忆失败: {e}")
+                logger.error(f"加载经验记忆失败: {e}")
                 self.memories = []
     
     def _save_memories(self):
@@ -117,9 +117,9 @@ class LongTermMemory:
             }
             with open(self.storage_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.debug("长期记忆已保存")
+            logger.debug("经验记忆已保存")
         except Exception as e:
-            logger.error(f"保存长期记忆失败: {e}")
+            logger.error(f"保存经验记忆失败: {e}")
     
     def add_memory(self,
                    cycle_id: int,
@@ -344,12 +344,12 @@ class LongTermMemory:
         return len(self.memories)
     
     def __repr__(self) -> str:
-        return f"LongTermMemory({len(self.memories)} memories)"
+        return f"ExperienceMemory({len(self.memories)} memories)"
 
 
 if __name__ == '__main__':
-    # 测试长期记忆
-    ltm = LongTermMemory("data/test_long_term_memory.json")
+    # 测试经验记忆
+    ltm = ExperienceMemory("data/test_experience_memory.json")
     
     # 添加一些测试记忆
     ltm.add_memory(

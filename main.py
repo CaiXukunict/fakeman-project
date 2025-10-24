@@ -20,7 +20,7 @@ from pathlib import Path
 from utils.config import Config
 from utils.logger import LoggerManager
 from purpose_generator import DesireManager, BiasSystem, SignalDetector, DesireUpdater
-from memory import MemoryDatabase, ExperienceRetriever, Experience, LongTermMemory
+from memory import MemoryDatabase, ExperienceRetriever, Experience, ExperienceMemory, EventMemory
 from action_model import ActingBot
 from compressor import ThoughtCompressor
 from scenario import ScenarioSimulator, MeansSimulation
@@ -638,16 +638,23 @@ class FakeManSystem:
             enable_llm=config.compression.enable_compression
         )
         
-        # 长记忆系统（先初始化，场景模拟器需要引用）
-        self.long_memory = LongTermMemory(
-            storage_path="data/long_term_memory.json"
+        # 经验记忆系统（先初始化，场景模拟器需要引用）
+        self.experience_memory = ExperienceMemory(
+            storage_path="data/experience_memory.json"
+        )
+        
+        # 事件记忆系统（记录完整的思考/行为序列）
+        self.event_memory = EventMemory(
+            storage_path="data/event_memory.json",
+            llm_config=config.llm.__dict__,
+            enable_llm_compression=config.compression.enable_compression
         )
         
         # 场景模拟系统（传入记忆系统引用，用于计算existing欲望）
         self.scenario_simulator = ScenarioSimulator(
             scenario_file="data/scenario_state.json",
             memory_database=self.memory,
-            long_term_memory=self.long_memory
+            long_term_memory=self.experience_memory
         )
         
         # 目的和手段选择
@@ -788,9 +795,9 @@ class FakeManSystem:
             )
             
             if past_fantasies:
-                # 将幻想记录到长记忆
+                # 将幻想记录到经验记忆
                 for fantasy in past_fantasies:
-                    self.long_memory.add_memory(
+                    self.experience_memory.add_memory(
                         cycle_id=self.cycle_count,
                         situation="对过去的幻想",
                         action_taken=fantasy,
@@ -886,6 +893,20 @@ class FakeManSystem:
         
         self.logger.info(f"\n决策: {thought['decision'].get('chosen_action')}")
         self.logger.info(f"行动: {action[:100]}...")
+        
+        # 添加到事件记忆
+        self.event_memory.add_event(
+            thought=thought.get('content', ''),
+            context=self.current_context,
+            action=action,
+            result=None,  # 主动行动的结果需要后续用户回应来判断
+            metadata={
+                'cycle_id': self.cycle_count,
+                'action_type': 'proactive',
+                'reason': reason,
+                'compressed': compressed
+            }
+        )
         
         # 写入输出
         self.comm.write_output(
@@ -1027,6 +1048,21 @@ class FakeManSystem:
             decision=thought.get('decision')
         )
         self.logger.info(f"  摘要: {compressed['summary']}")
+        
+        # 添加到事件记忆
+        self.event_memory.add_event(
+            thought=thought.get('content', ''),
+            context=user_input,
+            action=action,
+            result=None,  # 结果稍后通过handle_response添加
+            metadata={
+                'cycle_id': self.cycle_count,
+                'purpose': purpose,
+                'means_type': means_type,
+                'thought_count': thought_count_this_cycle,
+                'compressed': compressed
+            }
+        )
         
         # ========================================
         # 构建结果
@@ -1186,11 +1222,11 @@ class FakeManSystem:
             success=(response_type == 'positive')
         )
         
-        # 记录到长记忆
+        # 记录到经验记忆
         dominant_desire = max(cycle_result['desires_before'], 
                              key=cycle_result['desires_before'].get)
         
-        self.long_memory.add_memory(
+        self.experience_memory.add_memory(
             cycle_id=cycle_result['cycle_id'],
             situation=cycle_result['user_input'][:100],
             action_taken=cycle_result['action'][:100],
@@ -1201,7 +1237,7 @@ class FakeManSystem:
         )
         
         self.logger.info(f"经验已记录，ID: {exp_id}")
-        self.logger.info(f"长记忆已更新，共 {len(self.long_memory)} 条记忆")
+        self.logger.info(f"经验记忆已更新，共 {len(self.experience_memory)} 条记忆")
         
         return exp
     
@@ -1262,6 +1298,13 @@ class FakeManSystem:
         multiplier = base + (thought_count - 1) * weight
         return min(multiplier, max_mult)
     
+    def _format_thought_content(self, content: str) -> str:
+        """格式化思考内容以便阅读"""
+        # 为每行添加缩进
+        lines = content.split('\n')
+        formatted_lines = ['  ' + line for line in lines]
+        return '\n'.join(formatted_lines)
+    
     def get_stats(self) -> Dict[str, Any]:
         """获取系统统计信息"""
         return {
@@ -1271,7 +1314,8 @@ class FakeManSystem:
             },
             'desires': self.desire_manager.get_current_desires(),
             'memory': self.memory.get_statistics(),
-            'long_memory': self.long_memory.get_statistics(),
+            'experience_memory': self.experience_memory.get_statistics(),
+            'event_memory': self.event_memory.get_statistics(),
             'retrieval': self.retriever.get_retrieval_stats(),
             'scenario': {
                 'current_situation': self.scenario_simulator.current_scenario.current_situation,

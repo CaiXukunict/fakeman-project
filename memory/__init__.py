@@ -12,15 +12,18 @@ from .similarity import (
     calculate_experience_similarity
 )
 from .retrieval import ExperienceRetriever
-from .long_term_memory import LongTermMemory, MemorySummary
+from .experience_memory import ExperienceMemory, MemorySummary
+from .event_memory import EventMemory, EventSegment
 
 __all__ = [
     'Experience',
     'PurposeRecord',
     'MemoryDatabase',
     'ExperienceRetriever',
-    'LongTermMemory',
+    'ExperienceMemory',
     'MemorySummary',
+    'EventMemory',
+    'EventSegment',
     'calculate_context_similarity',
     'calculate_purpose_overlap',
     'calculate_means_similarity',
