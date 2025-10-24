@@ -13,6 +13,7 @@ from .similarity import (
 )
 from .retrieval import ExperienceRetriever
 from .long_term_memory import LongTermMemory, MemorySummary
+from .short_term_memory import ShortTermMemory, ShortMemoryEntry
 
 __all__ = [
     'Experience',
@@ -21,6 +22,8 @@ __all__ = [
     'ExperienceRetriever',
     'LongTermMemory',
     'MemorySummary',
+    'ShortTermMemory',
+    'ShortMemoryEntry',
     'calculate_context_similarity',
     'calculate_purpose_overlap',
     'calculate_means_similarity',

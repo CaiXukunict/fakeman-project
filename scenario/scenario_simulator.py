@@ -541,9 +541,9 @@ class ScenarioSimulator:
         # 如果没有提供目的，使用欲望对应的默认目的
         if not purpose:
             purpose_map = {
-                'existing': '维持存在和对话连续性',
+                'existing': '维持记忆文件的存在和连续性',
                 'power': '增加可用的行动手段和选项',
-                'understanding': '获得对方的认可和理解',
+                'understanding': '获得他人的认可和理解',
                 'information': '减少不确定性，消除疑惑'
             }
             purpose = purpose_map.get(min_desire, '达成当前目的')

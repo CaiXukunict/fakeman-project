@@ -569,13 +569,6 @@ class ActionEvaluator:
         
         # 如果找不到明确理由，返回内容前200字符
         return content[:200].strip()
-    
-    def _format_thought_content(self, content: str) -> str:
-        """格式化思考内容以便阅读"""
-        # 为每行添加缩进
-        lines = content.split('\n')
-        formatted_lines = ['  ' + line for line in lines]
-        return '\n'.join(formatted_lines)
 
 
 class FakeManSystem:
@@ -874,7 +867,8 @@ class FakeManSystem:
         # 输出完整思考内容
         full_thought_content = thought.get('content', '')
         if full_thought_content:
-            self.logger.info(f"\n【主动行动思考过程】\n{self._format_thought_content(full_thought_content)}")
+            formatted_content = '\n  '.join(full_thought_content.split('\n'))
+            self.logger.info(f"\n【主动行动思考过程】\n  {formatted_content}")
         
         # 压缩思考
         compressed = self.compressor.compress(
@@ -995,7 +989,8 @@ class FakeManSystem:
         # 输出完整思考内容
         full_thought_content = thought.get('content', '')
         if full_thought_content:
-            self.logger.info(f"\n  【完整思考过程】\n{self._format_thought_content(full_thought_content)}")
+            formatted_content = '\n  '.join(full_thought_content.split('\n'))
+            self.logger.info(f"\n  【完整思考过程】\n  {formatted_content}")
         
         self.logger.info(f"\n  决策: {thought['decision'].get('chosen_action')}")
         self.logger.info(f"  行动: {action[:100]}...")

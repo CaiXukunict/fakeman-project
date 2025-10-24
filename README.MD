@@ -20,9 +20,12 @@ python examples/simple_demo.py
 
 # 4. 或交互式对话
 python examples/interactive_chat.py
+
+# 5. 或使用图形界面（推荐）
+python chat_gui.py  # 需要先启动 main.py
 ```
 
-详见 [QUICKSTART.md](QUICKSTART.md)
+详见 [QUICKSTART.md](QUICKSTART.md) 或 [GUI快速开始](GUI_QUICKSTART.md)
 
 ## 核心特性
 
@@ -48,6 +51,11 @@ python examples/interactive_chat.py
 - ✅ **无聊机制**：持续重复无效的手段，其possibility bias会下降
 - ✅ **手段bias计算**：手段对目的可能性的影响 × 完成目的后欲望变化程度
 - ✅ **JSON存储**：经验记录使用JSON格式，便于查看和调试
+- ✅ **场景模拟系统**：预测手段的结果，自动过滤负面行动
+- ✅ **幻想生成机制**：生成"如果...就好了"的假设场景
+- ✅ **长期记忆**：简要记录历史事件和重要经验
+- ✅ **连续自主思考**：LLM驱动的每秒深度思考和行动评估
+- ✅ **图形聊天界面**：美观的双栏Tkinter界面，实时时间戳显示
 
 ### 3. 偏见系统
 
@@ -151,6 +159,25 @@ system.handle_response(result, "很有见地！", response_type='positive')
 # 查看欲望变化
 print(system.desire_manager.get_current_desires())
 ```
+
+### 图形界面聊天（推荐）
+
+```bash
+# 终端1：启动FakeMan系统
+python main.py
+
+# 终端2：启动图形界面
+python chat_gui.py
+```
+
+**特性：**
+- 🎨 双栏布局 - 左侧AI输出，右侧用户输入
+- ⏰ 实时时间戳 - 每条消息显示 `[HH:MM:SS]`
+- 🔄 自动监听 - 实时检测AI回复
+- 💭 思考展示 - 显示AI的思考摘要
+- ⌨️ 快捷键 - `Ctrl+Enter` 快速发送
+
+详见：[GUI快速开始](GUI_QUICKSTART.md) | [GUI文档](CHAT_GUI_README.md)
 
 ### 查看记忆
 
