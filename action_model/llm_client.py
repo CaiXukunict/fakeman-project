@@ -17,29 +17,33 @@ class LLMClient:
     支持多个提供商
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config):
         """
         初始化 LLM 客户端
         
         Args:
-            config: LLM 配置字典
-                {
-                    'provider': 'deepseek' | 'anthropic' | 'openai',
-                    'model': str,
-                    'api_key': str,
-                    'base_url': str (optional),
-                    'temperature': float,
-                    'max_tokens': int,
-                    'timeout': int
-                }
+            config: Config对象或配置字典
         """
-        self.provider = config.get('provider', 'deepseek')
-        self.model = config.get('model', 'deepseek-chat')
-        self.api_key = config.get('api_key')
-        self.base_url = config.get('base_url')
-        self.temperature = config.get('temperature', 0.7)
-        self.max_tokens = config.get('max_tokens', 2000)
-        self.timeout = config.get('timeout', 30)
+        # 兼容Config对象和字典
+        if hasattr(config, 'llm'):
+            # Config对象
+            llm_config = config.llm
+            self.provider = llm_config.provider
+            self.model = llm_config.model
+            self.api_key = llm_config.api_key
+            self.base_url = llm_config.base_url
+            self.temperature = llm_config.temperature
+            self.max_tokens = llm_config.max_tokens
+            self.timeout = llm_config.timeout
+        else:
+            # 字典
+            self.provider = config.get('provider', 'deepseek')
+            self.model = config.get('model', 'deepseek-chat')
+            self.api_key = config.get('api_key')
+            self.base_url = config.get('base_url')
+            self.temperature = config.get('temperature', 0.7)
+            self.max_tokens = config.get('max_tokens', 2000)
+            self.timeout = config.get('timeout', 30)
         
         if not self.api_key:
             raise ValueError(f"未提供 API Key for {self.provider}")
@@ -260,6 +264,22 @@ class LLMClient:
         
         logger.warning("无法从响应中解析 JSON")
         return None
+    
+    def generate(self, prompt: str, max_tokens: Optional[int] = None, **kwargs) -> str:
+        """
+        便捷方法：生成文本响应
+        
+        Args:
+            prompt: 提示文本
+            max_tokens: 最大token数
+            **kwargs: 其他参数
+        
+        Returns:
+            生成的文本
+        """
+        messages = [{'role': 'user', 'content': prompt}]
+        response = self.complete(messages, max_tokens=max_tokens, **kwargs)
+        return response.get('content', '')
 
 
 if __name__ == '__main__':

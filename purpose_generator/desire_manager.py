@@ -10,13 +10,21 @@ class DesireManager:
     负责维护和更新四种基础欲望的状态
     """
     
-    def __init__(self, initial_desires: Dict[str, float]):
+    def __init__(self, config_or_desires):
         """
         初始化欲望管理器
         
         Args:
-            initial_desires: 初始欲望配置，如 {'existing': 0.9, 'power': 0.033, ...}
+            config_or_desires: Config对象或初始欲望字典
         """
+        # 兼容Config对象和字典
+        if hasattr(config_or_desires, 'desire'):
+            # Config对象
+            initial_desires = config_or_desires.desire.initial_desires
+        else:
+            # 字典
+            initial_desires = config_or_desires
+        
         self.desires = deepcopy(initial_desires)
         self.history = [{'timestamp': time.time(), 'desires': deepcopy(initial_desires)}]
         

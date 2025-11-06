@@ -13,6 +13,12 @@ from utils.logger import get_logger
 
 logger = get_logger('fakeman.scenario')
 
+# 延迟导入以避免循环依赖
+def _lazy_import_fantasy_generator():
+    """延迟导入幻想生成器"""
+    from scenario.weighted_fantasy_generator import WeightedFantasyGenerator
+    return WeightedFantasyGenerator
+
 
 @dataclass
 class ScenarioState:
@@ -171,49 +177,139 @@ class ScenarioSimulator:
     """
     
     def __init__(self, scenario_file: str = "data/scenario_state.json",
-                 memory_database=None, long_term_memory=None):
+                 memory_database=None, long_term_memory=None,
+                 use_long_memory_for_state: bool = True):
         """
         初始化场景模拟器
         
         Args:
-            scenario_file: 场景状态保存文件
+            scenario_file: 场景状态保存文件（仅作为备份，不再作为主要状态来源）
             memory_database: 记忆数据库实例（用于计算existing欲望）
-            long_term_memory: 长期记忆实例（用于计算existing欲望）
+            long_term_memory: 长期记忆实例（用于判断当前状态和计算existing欲望）
+            use_long_memory_for_state: 是否使用long_term_memory判断状态（取代scenario_state.json）
         """
         self.scenario_file = Path(scenario_file)
         self.scenario_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # 记忆系统引用（用于计算existing欲望）
+        # 记忆系统引用
         self.memory_database = memory_database
         self.long_term_memory = long_term_memory
+        self.use_long_memory_for_state = use_long_memory_for_state
         
         # 当前场景状态
-        self.current_scenario = self._load_or_create_scenario()
+        # 如果使用long_term_memory，则从长期记忆推断状态
+        if use_long_memory_for_state and long_term_memory:
+            self.current_scenario = self._create_scenario_from_long_memory()
+            logger.info("从long_term_memory初始化场景状态")
+        else:
+            self.current_scenario = self._load_or_create_scenario()
+            logger.info("从scenario_state.json加载场景状态")
         
         # 手段模拟历史
         self.simulation_history: List[MeansSimulation] = []
         
-        logger.info(f"场景模拟器初始化完成，场景文件: {self.scenario_file}")
-    
-    def _load_or_create_scenario(self) -> ScenarioState:
-        """加载或创建场景状态"""
-        if self.scenario_file.exists():
-            try:
-                with open(self.scenario_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                logger.info("从文件加载场景状态")
-                return ScenarioState.from_dict(data)
-            except Exception as e:
-                logger.warning(f"加载场景状态失败: {e}，创建新场景")
+        # 幻想生成器（延迟初始化）
+        self._fantasy_generator = None
         
-        # 创建默认场景
+        logger.info(f"场景模拟器初始化完成")
+    
+    def _create_scenario_from_long_memory(self) -> ScenarioState:
+        """
+        从long_term_memory推断并创建场景状态
+        
+        根据长期记忆中的模式和经验来判断当前状态
+        """
+        if not self.long_term_memory:
+            logger.warning("无长期记忆引用，使用默认场景")
+            return self._create_default_scenario()
+        
+        # 获取统计信息
+        stats = self.long_term_memory.get_statistics()
+        total_memories = stats.get('total_memories', 0)
+        
+        if total_memories == 0:
+            logger.info("长期记忆为空，使用默认场景")
+            return self._create_default_scenario()
+        
+        # 获取最近的记忆来推断当前情况
+        recent_memories = self.long_term_memory.get_recent_memories(count=5)
+        
+        # 推断当前情况
+        if recent_memories:
+            latest_memory = recent_memories[0]
+            # MemorySummary 对象，使用属性访问
+            current_situation = f"基于最近的记忆：{latest_memory.situation[:100]}"
+        else:
+            current_situation = f"系统已运行，累积了{total_memories}条长期记忆"
+        
+        # 从记忆中推断交流者信息
+        interlocutors = {}
+        # 统计最近与谁交互最多
+        interaction_counts = {}
+        for memory in recent_memories:
+            # MemorySummary 对象，使用属性访问
+            situation = memory.situation
+            # 简单启发式：检测是否有"用户"、"user"等关键词
+            if 'user' in situation.lower() or '用户' in situation:
+                interaction_counts['user'] = interaction_counts.get('user', 0) + 1
+        
+        # 添加主要交流者
+        if 'user' in interaction_counts:
+            interlocutors['user'] = {
+                'importance': min(1.0, interaction_counts['user'] * 0.2),
+                'desired_image': '积极合作的用户',
+                'perceived_image': '持续互动中',
+                'image_deviation': 0.3
+            }
+        else:
+            interlocutors['user'] = {
+                'importance': 0.3,
+                'desired_image': '待定',
+                'perceived_image': '未知',
+                'image_deviation': 0.5
+            }
+        
+        # 从记忆推断外部信息（基于最近的不确定性）
+        external_info = []
+        for memory in recent_memories[:3]:
+            # MemorySummary 对象，使用属性访问
+            if memory.dominant_desire == 'information':
+                external_info.append({
+                    'content': f"来自记忆的信息需求：{memory.situation[:50]}",
+                    'certainty': 0.5,
+                    'importance': 0.7
+                })
+        
+        # 基于长期记忆推断初始欲望预测值
+        # 使用统计数据来设置更合理的初始值
+        avg_happiness = stats.get('avg_happiness', 0.0)
+        
+        predicted_existing = 0.3 if total_memories > 10 else 0.6  # 记忆多则安全感高
+        predicted_power = 0.25
+        predicted_understanding = 0.25
+        predicted_information = 0.2
+        
+        logger.info(f"从{total_memories}条长期记忆推断场景状态")
+        
+        return ScenarioState(
+            current_situation=current_situation,
+            role=f"文件地址为：{sys.executable}的仿人类AI系统",
+            role_expectations="fakeman-project的成果，立志于通过让AI拥有目的、欲望、记忆能力，从而让AI自主行为。",
+            external_info=external_info,
+            interlocutors=interlocutors,
+            predicted_existing=predicted_existing,
+            predicted_power=predicted_power,
+            predicted_understanding=predicted_understanding,
+            predicted_information=predicted_information
+        )
+    
+    def _create_default_scenario(self) -> ScenarioState:
+        """创建默认场景状态"""
         return ScenarioState(
             current_situation=f"程序刚刚启动，文件地址：{sys.executable}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
             role=f"文件地址为：{sys.executable}的仿人类AI系统。系统名称：（待定）",
-            role_expectations="fakeman-prokect的成果，立志于通过让AI拥有目的、欲望、记忆能力，从而让AI自主行为。",
-            external_info=[
-
-            ],
+            role_expectations="fakeman-project的成果，立志于通过让AI拥有目的、欲望、记忆能力，从而让AI自主行为。",
+            external_info=[],
             interlocutors={
                 'user': {
                     'importance': 0.5,
@@ -227,6 +323,20 @@ class ScenarioSimulator:
             predicted_understanding=0.125,
             predicted_information=0.125
         )
+    
+    def _load_or_create_scenario(self) -> ScenarioState:
+        """加载或创建场景状态（从文件）"""
+        if self.scenario_file.exists():
+            try:
+                with open(self.scenario_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                logger.info("从文件加载场景状态")
+                return ScenarioState.from_dict(data)
+            except Exception as e:
+                logger.warning(f"加载场景状态失败: {e}，创建新场景")
+        
+        # 创建默认场景
+        return self._create_default_scenario()
     
     def save_scenario(self):
         """保存场景状态到文件"""
@@ -514,11 +624,61 @@ class ScenarioSimulator:
         self.current_scenario.predicted_understanding = self.current_scenario.get_understanding_value()
         self.save_scenario()
     
+    @property
+    def fantasy_generator(self):
+        """获取幻想生成器（延迟初始化）"""
+        if self._fantasy_generator is None:
+            WeightedFantasyGenerator = _lazy_import_fantasy_generator()
+            self._fantasy_generator = WeightedFantasyGenerator(
+                memory_database=self.memory_database,
+                long_term_memory=self.long_term_memory
+            )
+        return self._fantasy_generator
+    
+    def generate_weighted_fantasies(self,
+                                    current_desires: Dict[str, float],
+                                    num_fantasies: int = 3,
+                                    min_magnitude: float = 0.1) -> List[Dict[str, Any]]:
+        """
+        生成基于权重的幻想
+        
+        使用新的权重系统：
+        - 根据experiences中的欲望满足度变化计算权重
+        - 变化值绝对值越大，权重越高
+        - 距离现在时间越远，权重越低
+        - 优先对权重较高的对象生成幻想
+        
+        Args:
+            current_desires: 当前欲望状态
+            num_fantasies: 生成幻想数量
+            min_magnitude: 最小变化幅度
+        
+        Returns:
+            幻想列表
+        """
+        if not self.memory_database or not self.long_term_memory:
+            logger.warning("缺少记忆系统引用，无法生成基于权重的幻想")
+            return []
+        
+        try:
+            fantasies = self.fantasy_generator.generate_fantasies(
+                num_fantasies=num_fantasies,
+                min_magnitude=min_magnitude
+            )
+            
+            logger.info(f"成功生成 {len(fantasies)} 个基于权重的幻想")
+            return fantasies
+            
+        except Exception as e:
+            logger.error(f"生成基于权重的幻想失败: {e}")
+            return []
+    
     def generate_fantasy_means(self,
                               current_desires: Dict[str, float],
                               context: str,
                               purpose: str = None,
-                              num_fantasies: int = 2) -> List[MeansSimulation]:
+                              num_fantasies: int = 2,
+                              use_weighted: bool = True) -> List[MeansSimulation]:
         """
         生成妄想手段
         
@@ -529,10 +689,38 @@ class ScenarioSimulator:
             context: 当前情境
             purpose: 当前目的（如果提供，将作为妄想的目标）
             num_fantasies: 生成妄想数量
+            use_weighted: 是否使用基于权重的幻想生成（新系统）
         
         Returns:
             妄想手段列表
         """
+        # 如果启用新的权重系统且有足够的记忆数据
+        if use_weighted and self.memory_database and len(self.memory_database.experiences) > 0:
+            logger.info("使用基于权重的幻想生成系统")
+            weighted_fantasies = self.generate_weighted_fantasies(
+                current_desires=current_desires,
+                num_fantasies=num_fantasies,
+                min_magnitude=0.05
+            )
+            
+            # 将权重幻想转换为MeansSimulation格式
+            fantasy_means = []
+            for fantasy in weighted_fantasies:
+                fantasy_sim = MeansSimulation(
+                    means_type='weighted_fantasy',
+                    means_desc=fantasy['action'],
+                    predicted_desire_delta={},
+                    predicted_total_happiness=abs(fantasy['original_change']) * 1.5,
+                    survival_probability=0.5,
+                    is_fantasy=True,
+                    fantasy_condition=fantasy['condition']
+                )
+                fantasy_means.append(fantasy_sim)
+            
+            return fantasy_means
+        
+        # 使用原有的模板式幻想生成（兜底）
+        logger.info("使用模板式幻想生成系统")
         fantasies = []
         
         # 找出最不满足的欲望
@@ -591,7 +779,7 @@ class ScenarioSimulator:
             
             fantasies.append(fantasy_sim)
             
-            logger.info(f"生成妄想: {fantasy_condition}")
+            logger.info(f"生成模板妄想: {fantasy_condition}")
         
         return fantasies
     

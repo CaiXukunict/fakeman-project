@@ -36,7 +36,8 @@ class ActingBot:
     def think(self,
              context: str,
              current_desires: Dict[str, float],
-             retrieve_memories: bool = True) -> Dict[str, Any]:
+             retrieve_memories: bool = True,
+             long_term_memories: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         执行思考
         
@@ -44,6 +45,7 @@ class ActingBot:
             context: 当前情境（用户输入）
             current_desires: 当前欲望状态
             retrieve_memories: 是否检索相关记忆
+            long_term_memories: 长期记忆（持续上下文）
         
         Returns:
             思考内容字典，包含：
@@ -71,7 +73,8 @@ class ActingBot:
         thought = self.thought_gen.generate_thought(
             context=context,
             current_desires=current_desires,
-            relevant_memories=relevant_memories
+            relevant_memories=relevant_memories,
+            long_term_memories=long_term_memories
         )
         
         # 判定逻辑闭环
@@ -108,18 +111,20 @@ class ActingBot:
     
     def think_and_act(self,
                      context: str,
-                     current_desires: Dict[str, float]) -> Tuple[Dict[str, Any], str]:
+                     current_desires: Dict[str, float],
+                     long_term_memories: Optional[List[Dict]] = None) -> Tuple[Dict[str, Any], str]:
         """
         完整的思考-行动流程
         
         Args:
             context: 当前情境
             current_desires: 当前欲望状态
+            long_term_memories: 长期记忆（持续上下文）
         
         Returns:
             (thought, action) 元组
         """
-        thought = self.think(context, current_desires)
+        thought = self.think(context, current_desires, long_term_memories=long_term_memories)
         action = self.act(thought, current_desires)
         
         return thought, action

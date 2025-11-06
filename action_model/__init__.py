@@ -8,6 +8,7 @@ from .thought_generator import ThoughtGenerator
 from .action_executor import ActionExecutor
 from .logical_closure import check_logical_closure, calculate_thought_depth
 from .llm_client import LLMClient
+from .memory_means import MemoryAsМeans, MemoryDecision
 
 __all__ = [
     'ActingBot',
@@ -15,6 +16,8 @@ __all__ = [
     'ActionExecutor',
     'LLMClient',
     'check_logical_closure',
-    'calculate_thought_depth'
+    'calculate_thought_depth',
+    'MemoryAsМeans',
+    'MemoryDecision'
 ]
 

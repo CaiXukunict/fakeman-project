@@ -16,8 +16,8 @@ logger = get_logger('fakeman.long_memory')
 @dataclass
 class MemorySummary:
     """
-    记忆摘要
-    简化的历史事件记录
+    记忆摘要（增强版）
+    完整记录历史事件，包含输出和思考内容
     """
     id: int  # 记忆ID
     timestamp: float  # 时间戳
@@ -38,6 +38,96 @@ class MemorySummary:
     # 标签
     tags: List[str] = field(default_factory=list)
     
+    # ===== 新增字段：完整内容记录 =====
+    
+    # 输出内容
+    output_text: str = ''  # 实际输出的完整文本
+    output_type: str = ''  # 输出类型（回答/陈述/问题等）
+    
+    # 思考内容（带权重）
+    thought_contents: List[Dict[str, Any]] = field(default_factory=list)
+    # 每个思考片段: {
+    #   'content': str,           # 思考内容
+    #   'weight': float,          # 权重 (0-1)，由LLM决定
+    #   'type': str,              # 类型（分析/推理/计划等）
+    #   'related_desire': str,    # 相关欲望
+    #   'timestamp': float        # 思考时刻
+    # }
+    
+    # 压缩权重（用于后续合并时分配篇幅）
+    compression_weight: float = 1.0  # 整体权重，影响合并时的篇幅分配
+    
+    def add_thought_content(self,
+                           content: str,
+                           weight: float,
+                           thought_type: str = 'analysis',
+                           related_desire: str = '') -> None:
+        """
+        添加思考内容
+        
+        Args:
+            content: 思考内容
+            weight: 权重 (0-1)
+            thought_type: 思考类型
+            related_desire: 相关欲望
+        """
+        thought = {
+            'content': content,
+            'weight': weight,
+            'type': thought_type,
+            'related_desire': related_desire,
+            'timestamp': time.time()
+        }
+        self.thought_contents.append(thought)
+    
+    def get_weighted_thought_summary(self, max_length: int = 200) -> str:
+        """
+        获取基于权重的思考摘要
+        
+        权重越高的思考内容，获得越多篇幅
+        
+        Args:
+            max_length: 最大长度
+            
+        Returns:
+            加权摘要
+        """
+        if not self.thought_contents:
+            return ""
+        
+        # 按权重排序
+        sorted_thoughts = sorted(
+            self.thought_contents,
+            key=lambda x: x['weight'],
+            reverse=True
+        )
+        
+        # 根据权重分配字符数
+        total_weight = sum(t['weight'] for t in self.thought_contents)
+        if total_weight == 0:
+            return ""
+        
+        summary_parts = []
+        remaining_length = max_length
+        
+        for thought in sorted_thoughts:
+            if remaining_length <= 0:
+                break
+            
+            # 计算该思考应得的字符数
+            allocated_length = int((thought['weight'] / total_weight) * max_length)
+            allocated_length = min(allocated_length, remaining_length)
+            
+            if allocated_length > 0:
+                content = thought['content']
+                if len(content) > allocated_length:
+                    content = content[:allocated_length-3] + "..."
+                
+                summary_parts.append(content)
+                remaining_length -= len(content)
+        
+        return " ".join(summary_parts)
+    
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -50,7 +140,12 @@ class MemorySummary:
             'dominant_desire': self.dominant_desire,
             'happiness_delta': self.happiness_delta,
             'importance': self.importance,
-            'tags': self.tags
+            'tags': self.tags,
+            # 新增字段
+            'output_text': self.output_text,
+            'output_type': self.output_type,
+            'thought_contents': self.thought_contents,
+            'compression_weight': self.compression_weight
         }
     
     @classmethod

@@ -8,10 +8,6 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# 加载环境变量（必须在导入Config之前）
-from dotenv import load_dotenv
-load_dotenv()
-
 from utils.config import Config
 from utils.logger import setup_logger
 
@@ -63,8 +59,8 @@ class FakeManRefactored:
         self.experience_system = AdjustableExperienceSystem("data/adjustable_experiences.json")
         
         # 保留的记忆系统
-        self.short_term_memory = ShortTermMemory()
-        self.long_term_memory = LongTermMemory()
+        self.short_term_memory = ShortTermMemory(self.config)
+        self.long_term_memory = LongTermMemory(self.config)
         
         # 状态
         self.cycle_count = 0
@@ -546,7 +542,7 @@ class FakeManRefactored:
         self,
         action: Dict,
         context: str,
-                                             desires_before: Dict[str, float],
+        desires_before: Dict[str, float],
         result: Dict
     ):
         """记录经验"""
@@ -573,7 +569,7 @@ class FakeManRefactored:
         # 简化实现：根据行动结果更新
         if action_result.get('success'):
             # 成功的行动稍微满足existing
-            self.desire_manager.update_desires({'existing': 0.02})
+            self.desire_manager.update_desire('existing', 0.02)
         
         return self.desire_manager.get_current_desires()
     
@@ -598,11 +594,11 @@ class FakeManRefactored:
             context_parts.append(f"外部输入: {external_input}")
         
         # 添加短期记忆
-        recent_memory = self.short_term_memory.get_recent_memories(count=3)
+        recent_memory = self.short_term_memory.get_recent_memories(n=3)
         if recent_memory:
             context_parts.append("最近记忆:")
             for mem in recent_memory:
-                context_parts.append(f"- {mem.content[:100]}")
+                context_parts.append(f"- {mem.get('content', '')[:100]}")
         
         return '\n'.join(context_parts) if context_parts else "空闲状态"
     
@@ -614,7 +610,7 @@ class FakeManRefactored:
     def get_status(self) -> Dict:
         """获取系统状态"""
         return {
-                'cycle_count': self.cycle_count,
+            'cycle_count': self.cycle_count,
             'desires': self.desire_manager.get_current_desires(),
             'purposes': self.purpose_manager.get_stats(),
             'means': self.means_manager.get_stats(),
@@ -624,83 +620,38 @@ class FakeManRefactored:
 
 
 def main():
-    """主函数 - 持续运行模式"""
+    """主函数"""
     config = Config()
     system = FakeManRefactored(config)
     
     print("FakeMan 重构版系统已启动")
     print("=" * 60)
-    print("模式: 持续思考（监听通信文件）")
-    print("按 Ctrl+C 可以安全退出")
-    print("=" * 60)
     
-    # 通信文件路径
-    input_file = Path("data/communication/user_input.json")
-    last_input_timestamp = 0
-    
-    # 持续运行
-    cycle_count = 0
-    try:
-        while True:
-            # 检查是否有新的用户输入
-            external_input = None
-            
-            if input_file.exists():
-                try:
-                    with open(input_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    timestamp = data.get('timestamp', 0)
-                    if timestamp > last_input_timestamp:
-                        last_input_timestamp = timestamp
-                        external_input = data.get('text', '')
-                        
-                        print(f"\n收到用户输入: {external_input[:50]}...")
-                        
-                        # 清空输入文件（避免重复处理）
-                        input_file.unlink()
-            
-                except Exception as e:
-                    pass  # 忽略读取错误
-            
-            # 如果没有外部输入，每30秒进行一次内部思考
-            if external_input or (cycle_count > 0 and cycle_count % 30 == 0):
-                cycle_count += 1
-                print(f"\n[周期 {cycle_count}] 开始思考...")
-                
-                result = system.thinking_cycle(external_input)
-                
-                print(f"✓ 完成 | 目的: {result['purposes']} | 手段: {result['means']}")
-                
-                # 如果有行动内容，显示
-                action = result.get('action', {})
-                if action and action.get('content'):
-                    print(f"回复: {action['content'][:100]}...")
-            
-            # 短暂休眠
-            time.sleep(1)
-    
-    except KeyboardInterrupt:
-        print("\n\n检测到中断信号，正在保存状态...")
-        system._save_state()
+    # 运行几个周期
+    for i in range(5):
+        print(f"\n第 {i+1} 个周期")
+        print("-" * 60)
         
-        print("\n" + "=" * 60)
-        print("最终状态:")
-        status = system.get_status()
-        print(f"总周期数: {status['cycle_count']}")
-        print(f"目的数: {status['purposes']['total']}")
-        print(f"手段数: {status['means']['total']}")
-        print(f"思考记录: {status['thoughts']['total_records']}")
-        print(f"经验数: {status['experiences']['total_experiences']}")
-        print("=" * 60)
-        print("\n再见！")
+        # 模拟外部输入
+        external_input = None
+        if i == 0:
+            external_input = "你好，我想了解你的工作原理"
+        elif i == 2:
+            external_input = "你能做什么？"
+        
+        result = system.thinking_cycle(external_input)
+        
+        print(f"思考: {result['thought']}")
+        print(f"行动: {result['action']}")
+        print(f"目的数: {result['purposes']}, 手段数: {result['means']}")
+        
+        time.sleep(1)
     
-    except Exception as e:
-        print(f"\n错误: {e}")
-        import traceback
-        traceback.print_exc()
-        system._save_state()
-        raise
+    # 显示最终状态
+    print("\n" + "=" * 60)
+    print("最终状态:")
+    status = system.get_status()
+    print(json.dumps(status, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

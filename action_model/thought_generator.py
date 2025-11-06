@@ -33,6 +33,7 @@ class ThoughtGenerator:
                         context: str,
                         current_desires: Dict[str, float],
                         relevant_memories: Optional[List[Dict]] = None,
+                        long_term_memories: Optional[List[Dict]] = None,
                         max_retries: int = 3) -> Dict[str, Any]:
         """
         生成思考内容
@@ -41,6 +42,7 @@ class ThoughtGenerator:
             context: 当前情境（用户输入）
             current_desires: 当前欲望状态
             relevant_memories: 相关历史经验
+            long_term_memories: 长期记忆（持续上下文）
             max_retries: 最大重试次数
         
         Returns:
@@ -64,11 +66,15 @@ class ThoughtGenerator:
         # 格式化记忆
         memories_str = self._format_memories(relevant_memories) if relevant_memories else "（无相关历史经验）"
         
+        # 【新增】格式化长期记忆
+        long_term_str = self._format_long_term_memories(long_term_memories) if long_term_memories else "（无历史思考记录）"
+        
         # 构建 prompt
         prompt = THINKING_PROMPT.format(
             desires=desires_str,
             context=context,
-            memories=memories_str
+            memories=memories_str,
+            long_term_memories=long_term_str
         )
         
         # 调用 LLM
@@ -136,19 +142,35 @@ class ThoughtGenerator:
         return '\n'.join(lines)
     
     def _format_memories(self, memories: List[Dict]) -> str:
-        """格式化历史记忆为可读字符串"""
+        """
+        格式化历史记忆为可读字符串
+        只显示历史手段的结果作为参考，不提示应该采取什么手段
+        """
         if not memories:
             return "（无相关历史经验）"
         
         lines = []
         for i, mem in enumerate(memories[:5], 1):  # 最多显示5条
-            summary = mem.get('thought_summary', '未知')
-            means = mem.get('means', '未知')
+            summary = mem.get('thought_summary', '未知情境')
+            means = mem.get('means', '某种行动')
             outcome = mem.get('total_happiness_delta', 0)
-            outcome_str = '✓成功' if outcome > 0 else '✗失败'
             
-            lines.append(f"  {i}. {summary[:40]}...")
-            lines.append(f"     手段: {means[:30]}, 结果: {outcome_str}")
+            # 详细的结果描述
+            if outcome > 0.1:
+                outcome_str = '效果良好（幸福度+%.2f）' % outcome
+                outcome_emoji = "✓"
+            elif outcome < -0.1:
+                outcome_str = '效果不佳（幸福度%.2f）' % outcome
+                outcome_emoji = "✗"
+            else:
+                outcome_str = '效果一般'
+                outcome_emoji = "○"
+            
+            # 只提供情境和结果作为参考，让AI自己决定采取什么行动
+            lines.append(f"  {outcome_emoji} 经验{i}: {summary[:50]}...")
+            lines.append(f"     当时采取: 「{means[:40]}」")
+            lines.append(f"     结果: {outcome_str}")
+            lines.append("")  # 空行分隔
         
         return '\n'.join(lines)
     
@@ -166,11 +188,8 @@ class ThoughtGenerator:
             logger.warning("decision 缺少 chosen_action")
             return False
         
-        # 验证 action 类型
-        valid_actions = ['ask_question', 'make_statement', 'wait']
-        if data['decision']['chosen_action'] not in valid_actions:
-            logger.warning(f"无效的 action 类型: {data['decision']['chosen_action']}")
-            return False
+        # 不再限制action类型，允许任何自然语言描述的行动
+        # AI可以自由选择任何它认为合适的行动
         
         return True
     
@@ -179,13 +198,13 @@ class ThoughtGenerator:
         logger.warning("使用默认思考内容")
         
         return {
-            'content': f"对于情境 '{context}'，我选择询问以获取更多信息。",
+            'content': f"对于情境 '{context}'，我选择观察并回应。",
             'context_analysis': "无法生成详细分析",
             'action_options': [],
             'decision': {
-                'chosen_action': 'ask_question',
-                'rationale': '默认策略：通过提问获取更多信息',
-                'expected_outcome': '增加对情境的理解'
+                'chosen_action': '观察情境并给出简短回应',
+                'rationale': '默认策略：保持谨慎并做出适当反应',
+                'expected_outcome': '维持对话并了解更多'
             },
             'signals': {
                 'threat': 0.0,
@@ -199,6 +218,45 @@ class ThoughtGenerator:
             'raw_response': '（默认响应）',
             'usage': {}
         }
+    
+    def _format_long_term_memories(self, long_term_memories: List[Dict]) -> str:
+        """
+        格式化长期记忆（持续思考记录）
+        
+        Args:
+            long_term_memories: 长期记忆列表
+        
+        Returns:
+            格式化后的长期记忆字符串
+        """
+        if not long_term_memories:
+            return "（无历史思考记录）"
+        
+        formatted = []
+        for i, ltm in enumerate(long_term_memories[-10:], 1):  # 只取最近10条
+            # 提取关键信息
+            cycle_id = ltm.get('cycle_id', '?')
+            situation = ltm.get('situation', '')
+            action_taken = ltm.get('action_taken', '')
+            
+            # 提取思考内容
+            thought_contents = ltm.get('thought_contents', [])
+            if thought_contents:
+                # 取权重最高的思考内容
+                sorted_thoughts = sorted(thought_contents, key=lambda x: x.get('weight', 0), reverse=True)
+                top_thought = sorted_thoughts[0].get('content', '')[:200]
+                thought_summary = f"  思考: {top_thought}"
+            else:
+                thought_summary = ""
+            
+            formatted.append(
+                f"记忆{i} [周期{cycle_id}]:\n"
+                f"  情境: {situation[:100]}\n"
+                f"  输出: {action_taken[:100]}\n"
+                f"{thought_summary}"
+            )
+        
+        return "\n\n".join(formatted)
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

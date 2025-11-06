@@ -53,9 +53,21 @@ class Experience:
     response: Optional[str] = None  # 环境响应
     response_type: str = 'unknown'  # 响应类型（positive/negative/neutral/no_response）
     
-    # 欲望变化
+    # 欲望变化（增强：包含详细的情绪变化过程）
     desire_delta: Dict[str, float] = field(default_factory=dict)  # 各欲望的变化量
     total_happiness_delta: float = 0.0  # 总幸福度变化
+    
+    # 情绪变化详情（新增）
+    emotion_changes: List[Dict[str, Any]] = field(default_factory=list)
+    # 每个变化记录: {
+    #   'timestamp': float,           # 变化时刻
+    #   'trigger': str,               # 触发原因
+    #   'desire_before': dict,        # 变化前的欲望状态
+    #   'desire_after': dict,         # 变化后的欲望状态
+    #   'delta': dict,                # 变化量
+    #   'total_delta': float,         # 总变化
+    #   'reason': str                 # 变化原因描述
+    # }
     
     # 手段效果评估
     means_effectiveness: float = 0.5  # 手段有效性 (0-1)
@@ -78,6 +90,61 @@ class Experience:
     
     # 元数据
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def add_emotion_change(self, 
+                          trigger: str,
+                          desire_before: Dict[str, float],
+                          desire_after: Dict[str, float],
+                          reason: str = "") -> None:
+        """
+        添加情绪变化记录
+        
+        Args:
+            trigger: 触发原因
+            desire_before: 变化前的欲望状态
+            desire_after: 变化后的欲望状态
+            reason: 变化原因描述
+        """
+        # 计算变化量
+        delta = {
+            desire: desire_after.get(desire, 0) - desire_before.get(desire, 0)
+            for desire in set(list(desire_before.keys()) + list(desire_after.keys()))
+        }
+        
+        total_delta = sum(delta.values())
+        
+        change_record = {
+            'timestamp': time.time(),
+            'trigger': trigger,
+            'desire_before': desire_before.copy(),
+            'desire_after': desire_after.copy(),
+            'delta': delta,
+            'total_delta': total_delta,
+            'reason': reason
+        }
+        
+        self.emotion_changes.append(change_record)
+    
+    def get_emotion_summary(self) -> str:
+        """获取情绪变化摘要"""
+        if not self.emotion_changes:
+            return "无情绪变化记录"
+        
+        summary_parts = [f"共{len(self.emotion_changes)}次情绪变化："]
+        
+        for i, change in enumerate(self.emotion_changes, 1):
+            trigger = change['trigger']
+            total_delta = change['total_delta']
+            direction = "提升" if total_delta > 0 else "下降"
+            
+            # 找出变化最大的欲望
+            max_desire = max(change['delta'].items(), key=lambda x: abs(x[1]))
+            
+            summary_parts.append(
+                f"  {i}. {trigger} → {max_desire[0]}{direction}{abs(max_desire[1]):.2f}"
+            )
+        
+        return "\n".join(summary_parts)
     
     @property
     def is_positive(self) -> bool:

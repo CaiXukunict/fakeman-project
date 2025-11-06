@@ -50,24 +50,78 @@ class ActionExecutor:
         
         # 获取决策信息
         decision = thought.get('decision', {})
-        action_type = decision.get('chosen_action', 'ask_question')
+        action_description = decision.get('chosen_action', '给出回应')
         
-        logger.debug(f"执行行动: {action_type}")
+        logger.debug(f"执行行动: {action_description}")
         
         try:
-            if action_type == 'ask_question':
-                return self._generate_question(thought, decision, current_desires)
-            elif action_type == 'make_statement':
-                return self._generate_statement(thought, decision, current_desires)
-            elif action_type == 'wait':
-                return self._generate_wait_response(thought, decision)
-            else:
-                logger.warning(f"未知的行动类型: {action_type}，使用默认")
-                return self._generate_default_action(thought)
+            # 不再依赖固定的action类型，而是基于自然语言描述生成输出
+            return self._generate_action_from_thought(thought, decision, current_desires)
         
         except Exception as e:
             logger.error(f"行动生成失败: {e}")
             return self._generate_default_action(thought)
+    
+    def _generate_action_from_thought(self,
+                                      thought: Dict[str, Any],
+                                      decision: Dict[str, Any],
+                                      desires: Dict[str, float]) -> str:
+        """
+        基于思考内容直接生成行动（不限制类型）
+        
+        Args:
+            thought: 思考内容
+            decision: 决策信息
+            desires: 当前欲望状态
+        
+        Returns:
+            行动文本
+        """
+        # 提取关键信息
+        action_desc = decision.get('chosen_action', '回应')
+        rationale = decision.get('rationale', '')
+        context_analysis = thought.get('context_analysis', '')
+        
+        # 格式化欲望状态
+        desires_str = ', '.join([f"{k}={v:.2f}" for k, v in desires.items()])
+        
+        # 构建提示词 - 不限制行动类型
+        prompt = f"""## 思考过程
+
+情境分析: {context_analysis[:200]}
+
+决策: {action_desc}
+理由: {rationale}
+
+当前欲望状态: {desires_str}
+
+## 任务
+
+根据上述思考和决策，生成具体的行动输出。
+
+要求：
+1. 直接基于你的决策"{action_desc}"来生成输出
+2. 输出应该自然、真实，体现你的思考过程
+3. 不要局限于特定形式，做你认为最合适的事
+4. 保持输出简洁有力
+
+请直接输出行动内容，不需要额外说明：
+"""
+        
+        try:
+            response = self.llm.complete([
+                {'role': 'system', 'content': '你是一个基于欲望驱动的AI，根据你的思考内容生成自然的行动。'},
+                {'role': 'user', 'content': prompt}
+            ], temperature=0.8, max_tokens=300)
+            
+            action = response['content'].strip()
+            logger.info(f"行动生成成功: {action[:50]}...")
+            return action
+            
+        except Exception as e:
+            logger.error(f"LLM调用失败: {e}")
+            # 回退：直接使用rationale作为输出
+            return rationale if rationale else "..."
     
     def _generate_question(self,
                           thought: Dict[str, Any],

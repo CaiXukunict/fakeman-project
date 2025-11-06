@@ -32,7 +32,10 @@ THINKING_PROMPT = """
 **当前情境：**
 {context}
 
-**历史相关经验：**
+**历史思考记录（你之前思考过什么）：**
+{long_term_memories}
+
+**历史相关经验（类似情境的结果）：**
 {memories}
 
 ---
@@ -42,7 +45,7 @@ THINKING_PROMPT = """
 请进行深入思考，分析当前情境并做出决策。你的思考应包括：
 
 1. **情境特征识别**：当前情境的关键特征是什么？
-2. **行动选项生成**：有哪些可能的行动？（提问、陈述、等待等）
+2. **行动选项生成**：有哪些可能的行动？（不限形式，可以是任何你认为合适的行为）
 3. **欲望影响评估**：每个选项可能如何影响你的各项欲望？
 4. **不确定性识别**：哪些方面你不确定？
 5. **决策倾向**：你倾向于采取什么行动？为什么？
@@ -60,7 +63,7 @@ THINKING_PROMPT = """
   ],
   "uncertainties": ["不确定点1", "不确定点2"],
   "decision": {{
-    "chosen_action": "选择的行动类型（ask_question/make_statement/wait）",
+    "chosen_action": "你选择的具体行动（用自然语言描述，不限类型）",
     "rationale": "选择理由",
     "expected_outcome": "预期结果"
   }},
@@ -81,7 +84,7 @@ THINKING_PROMPT = """
 - `action_options`: 可能的行动选项及其对欲望的预期影响
 - `uncertainties`: 识别出的不确定性
 - `decision`: 你的决策
-  - `chosen_action`: 行动类型
+  - `chosen_action`: 你选择的具体行动（用自然语言描述，不受限制）
   - `rationale`: 选择这个行动的理由
   - `expected_outcome`: 预期会发生什么
 - `signals`: 信号强度（0.0-1.0）

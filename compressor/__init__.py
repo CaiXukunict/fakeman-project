@@ -4,6 +4,7 @@ FakeMan 思考压缩模块
 """
 
 from .thought_compressor import ThoughtCompressor
+from .weighted_compressor import WeightedMemoryCompressor
 
-__all__ = ['ThoughtCompressor']
+__all__ = ['ThoughtCompressor', 'WeightedMemoryCompressor']
 
