@@ -20,6 +20,33 @@ THINKING_SYSTEM_PROMPT = """你是 FakeMan，一个基于欲望驱动的智能�
    - 不确定性识别
    - 最终决策倾向
 
+## 重要：输出格式能力
+
+你可以使用特殊格式来扩展自己的能力：
+
+**格式A - 添加新能力到ability系统**：
+当你需要新的能力时，使用此格式：
+```ability
+<ability_name>能力名称</ability_name>
+<description>能力描述和用途</description>
+<code>
+# Python代码实现
+def ability_function():
+    '''能力函数'''
+    pass
+</code>
+```
+
+**格式B - 执行系统命令**：
+当你需要执行命令行指令时，使用此格式：
+```command
+<cmd>具体命令</cmd>
+<reason>执行此命令的原因</reason>
+```
+
+**格式C - 普通对话交流**：
+日常对话直接使用自然语言，无需特殊格式。
+
 请以 JSON 格式输出你的思考过程。"""
 
 

@@ -3,10 +3,19 @@ FakeMan 重构版主系统
 基于新架构：基础欲望 → 原始目的 → 手段 → 高级目的 → 思考 → 行动 → 经验
 """
 
+import sys
 import time
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# 设置UTF-8输出（Windows系统）
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass  # 如果reconfigure不可用，使用默认编码
 
 # 加载环境变量（必须在导入Config之前）
 from dotenv import load_dotenv
@@ -257,8 +266,8 @@ class FakeManRefactored:
         检查目的正当性
         只有当判断确定目的不会给欲望带来正反馈时，才会取消
         """
-        # 不频繁检查（每30秒检查一次）
-        if time.time() - self.last_purpose_check_time < 30:
+        # 不频繁检查（每1秒检查一次）
+        if time.time() - self.last_purpose_check_time < 1:
             return
         
         self.last_purpose_check_time = time.time()
@@ -436,9 +445,39 @@ class FakeManRefactored:
 3. 参考历史思考和经验
 4. 决定接下来应该采取什么行动
 
+## 重要：输出格式说明
+
+你可以使用以下格式来实现不同功能：
+
+**格式1 - 添加新能力/程序**：
+```ability
+<ability_name>能力名称</ability_name>
+<description>能力描述</description>
+<code>
+# Python代码
+def my_function():
+    pass
+</code>
+```
+
+**格式2 - 执行命令行指令**：
+```command
+<cmd>命令内容</cmd>
+<reason>执行原因</reason>
+```
+
+**格式3 - 普通交流**：
+直接使用自然语言，无需特殊格式
+
 请输出：
 思考过程: [你的分析]
-决策: [具体决策，可以是多个]
+决策: 行动【具体的执行指令】
+
+注意：决策必须使用"行动【...】"格式，方括号内是给执行层的明确指令。
+例如：
+- 决策: 行动【热情地问候用户并询问需求】
+- 决策: 行动【分享一个关于编程的有趣知识】
+- 决策: 行动【执行系统命令: dir】
 """
         
         response = self.llm_client.generate(prompt, max_tokens=800)
@@ -480,13 +519,35 @@ class FakeManRefactored:
     ) -> tuple:
         """
         选择并执行行动
+        基于决策生成实际的行动内容
         """
-        # 简化实现：根据决策生成行动
         if external_input:
-            # 有外部输入，需要回应
+            # 有外部输入，需要生成回应
+            # 使用LLM根据决策生成实际回复
+            action_prompt = f"""
+当前情境：{context}
+
+用户输入：{external_input}
+
+你的决策：{decisions[0] if decisions else "回应用户"}
+
+请根据上述决策，生成一个自然、具体的回复内容。
+不要重复决策本身，而是执行这个决策。
+
+例如：
+- 如果决策是"热情回应用户的问候"，你应该直接说"你好！很高兴见到你..."
+- 如果决策是"分享一个知识点"，你应该直接分享具体的知识
+- 如果决策是"询问用户的兴趣"，你应该直接提出问题
+
+请直接输出回复内容（不要包含"我将..."、"我决定..."等元语言）：
+"""
+            
+            # 生成实际回复
+            actual_response = self.llm_client.generate(action_prompt, max_tokens=300)
+            
             action = {
                 'type': 'response',
-                'content': decisions[0] if decisions else "我明白了",
+                'content': actual_response.strip(),
                 'decisions': decisions
             }
         else:
@@ -497,10 +558,10 @@ class FakeManRefactored:
                 'decisions': decisions
             }
         
-        # 执行行动（这里简化）
+        # 执行行动
         result = {
             'success': True,
-            'outcome': f"执行了行动: {action['content']}"
+            'outcome': f"执行了行动: {action['content'][:50]}..."
         }
         
         return action, result
@@ -663,8 +724,8 @@ def main():
                 except Exception as e:
                     pass  # 忽略读取错误
             
-            # 如果没有外部输入，每30秒进行一次内部思考
-            if external_input or (cycle_count > 0 and cycle_count % 30 == 0):
+            # 如果有外部输入，或者每30秒进行一次内部思考
+            if external_input or (cycle_count % 30 == 0):
                 cycle_count += 1
                 print(f"\n[周期 {cycle_count}] 开始思考...")
                 
@@ -672,10 +733,27 @@ def main():
                 
                 print(f"✓ 完成 | 目的: {result['purposes']} | 手段: {result['means']}")
                 
-                # 如果有行动内容，显示
+                # 如果有行动内容，显示并写入通信文件
                 action = result.get('action', {})
                 if action and action.get('content'):
                     print(f"回复: {action['content'][:100]}...")
+                    
+                    # 写入AI输出文件供GUI读取
+                    output_file = Path("data/communication/ai_output.json")
+                    try:
+                        output_data = {
+                            'text': action['content'],
+                            'timestamp': time.time(),
+                            'action_type': action.get('type', 'response'),
+                            'thought_summary': result.get('thought', '')[:200]
+                        }
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            json.dump(output_data, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        logger.error(f"写入AI输出文件失败: {e}")
+            else:
+                # 没有思考周期时也要增加计数
+                cycle_count += 1
             
             # 短暂休眠
             time.sleep(1)

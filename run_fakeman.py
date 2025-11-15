@@ -7,6 +7,14 @@ import sys
 import time
 from dotenv import load_dotenv
 
+# 设置UTF-8输出（Windows系统）
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass  # 如果reconfigure不可用，使用默认编码
+
 # 加载环境变量
 load_dotenv()
 

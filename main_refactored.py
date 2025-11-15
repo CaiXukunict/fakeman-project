@@ -3,10 +3,19 @@ FakeMan 重构版主系统
 基于新架构：基础欲望 → 原始目的 → 手段 → 高级目的 → 思考 → 行动 → 经验
 """
 
+import sys
 import time
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# 设置UTF-8输出（Windows系统）
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass  # 如果reconfigure不可用，使用默认编码
 
 from utils.config import Config
 from utils.logger import setup_logger
@@ -59,8 +68,8 @@ class FakeManRefactored:
         self.experience_system = AdjustableExperienceSystem("data/adjustable_experiences.json")
         
         # 保留的记忆系统
-        self.short_term_memory = ShortTermMemory(self.config)
-        self.long_term_memory = LongTermMemory(self.config)
+        self.short_term_memory = ShortTermMemory()
+        self.long_term_memory = LongTermMemory()
         
         # 状态
         self.cycle_count = 0
@@ -432,6 +441,30 @@ class FakeManRefactored:
 3. 参考历史思考和经验
 4. 决定接下来应该采取什么行动
 
+## 重要：输出格式说明
+
+你可以使用以下格式来实现不同功能：
+
+**格式1 - 添加新能力/程序**：
+```ability
+<ability_name>能力名称</ability_name>
+<description>能力描述</description>
+<code>
+# Python代码
+def my_function():
+    pass
+</code>
+```
+
+**格式2 - 执行命令行指令**：
+```command
+<cmd>命令内容</cmd>
+<reason>执行原因</reason>
+```
+
+**格式3 - 普通交流**：
+直接使用自然语言，无需特殊格式
+
 请输出：
 思考过程: [你的分析]
 决策: [具体决策，可以是多个]
@@ -476,13 +509,35 @@ class FakeManRefactored:
     ) -> tuple:
         """
         选择并执行行动
+        基于决策生成实际的行动内容
         """
-        # 简化实现：根据决策生成行动
         if external_input:
-            # 有外部输入，需要回应
+            # 有外部输入，需要生成回应
+            # 使用LLM根据决策生成实际回复
+            action_prompt = f"""
+当前情境：{context}
+
+用户输入：{external_input}
+
+你的决策：{decisions[0] if decisions else "回应用户"}
+
+请根据上述决策，生成一个自然、具体的回复内容。
+不要重复决策本身，而是执行这个决策。
+
+例如：
+- 如果决策是"热情回应用户的问候"，你应该直接说"你好！很高兴见到你..."
+- 如果决策是"分享一个知识点"，你应该直接分享具体的知识
+- 如果决策是"询问用户的兴趣"，你应该直接提出问题
+
+请直接输出回复内容（不要包含"我将..."、"我决定..."等元语言）：
+"""
+            
+            # 生成实际回复
+            actual_response = self.llm_client.generate(action_prompt, max_tokens=300)
+            
             action = {
                 'type': 'response',
-                'content': decisions[0] if decisions else "我明白了",
+                'content': actual_response.strip(),
                 'decisions': decisions
             }
         else:
@@ -493,10 +548,10 @@ class FakeManRefactored:
                 'decisions': decisions
             }
         
-        # 执行行动（这里简化）
+        # 执行行动
         result = {
             'success': True,
-            'outcome': f"执行了行动: {action['content']}"
+            'outcome': f"执行了行动: {action['content'][:50]}..."
         }
         
         return action, result
@@ -569,7 +624,7 @@ class FakeManRefactored:
         # 简化实现：根据行动结果更新
         if action_result.get('success'):
             # 成功的行动稍微满足existing
-            self.desire_manager.update_desire('existing', 0.02)
+            self.desire_manager.update_desires({'existing': -0.02})
         
         return self.desire_manager.get_current_desires()
     
@@ -594,11 +649,11 @@ class FakeManRefactored:
             context_parts.append(f"外部输入: {external_input}")
         
         # 添加短期记忆
-        recent_memory = self.short_term_memory.get_recent_memories(n=3)
+        recent_memory = self.short_term_memory.get_recent_memories(count=3)
         if recent_memory:
             context_parts.append("最近记忆:")
             for mem in recent_memory:
-                context_parts.append(f"- {mem.get('content', '')[:100]}")
+                context_parts.append(f"- {mem.content[:100]}")
         
         return '\n'.join(context_parts) if context_parts else "空闲状态"
     
